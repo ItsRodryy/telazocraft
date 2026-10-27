@@ -13,6 +13,7 @@ from ..common.i18n import tr
 class Bus(QObject):
     evento = Signal(str, str, object)
     resultado = Signal(object, object, object)
+    resumen = Signal(str, object, object)
 
 
 def boton(texto, accion, principal=False, rol=None):
@@ -115,6 +116,7 @@ class Comando(QLineEdit):
 class Log(QPlainTextEdit):
     def __init__(self):
         super().__init__()
+        self.setObjectName('log')
         self.setReadOnly(True)
         self.setMaximumBlockCount(5000)
         self.seguir = True

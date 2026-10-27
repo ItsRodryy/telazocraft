@@ -21,7 +21,7 @@ def verificar(ruta):
         return nombres
 
 
-def crear(servidor, nivel="manual", con_diaria=True, en_sesion=False):
+def crear(servidor, nivel="manual", con_diaria=True, en_sesion=False, progreso=lambda valor,texto: None):
     if nivel not in ("auto", "manual", "sesion", "diaria", "partida"):
         raise ValueError("Nivel de copia desconocido")
     if not en_sesion:
@@ -31,18 +31,22 @@ def crear(servidor, nivel="manual", con_diaria=True, en_sesion=False):
         raise ValueError("No hay un mundo válido para copiar")
     carpeta = servidor.biblioteca.ruta("copias", servidor.id, "locales" if nivel in ("auto", "manual") else "partidas" if nivel == "partida" else "compartidas")
     carpeta.mkdir(parents=True, exist_ok=True)
-    tamano = sum(p.stat().st_size for p in mundo.rglob("*") if p.is_file())
+    archivos=[p for p in mundo.rglob('*') if p.is_file() and p.name!='session.lock']
+    tamano = sum(p.stat().st_size for p in archivos)
     if shutil.disk_usage(carpeta).free < tamano * 2:
         raise OSError("Espacio libre insuficiente para una copia segura")
     fecha = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S_%f")
     destino = carpeta / f"mundo_{servidor.id}_{nivel}_{fecha}.zip"
     temporal = destino.with_suffix(".zip.tmp")
     with zipfile.ZipFile(temporal, "w", zipfile.ZIP_DEFLATED, compresslevel=1, allowZip64=True) as z:
-        for p in mundo.rglob("*"):
+        escritos=0
+        for p in archivos:
             if p.is_symlink():
                 raise ValueError("Enlace dentro del mundo")
             if p.is_file() and p.name != "session.lock":
                 z.write(p, Path(mundo.name) / p.relative_to(mundo))
+                escritos+=p.stat().st_size;progreso(int(90*escritos/max(1,tamano)),'Copiando mundo')
+    progreso(92,'Verificando copia')
     verificar(temporal)
     os.replace(temporal, destino)
     rotar(servidor, carpeta, nivel)
@@ -51,7 +55,8 @@ def crear(servidor, nivel="manual", con_diaria=True, en_sesion=False):
         compartidas = servidor.biblioteca.ruta("copias", servidor.id, "compartidas")
         existentes = list(compartidas.glob(f"*diaria*{hoy}*.zip"))
         if not existentes:
-            crear(servidor, "diaria", False, en_sesion)
+            crear(servidor, "diaria", False, en_sesion, lambda n,t:progreso(94+n*5//100,t))
+    progreso(100,'Copia verificada')
     return destino
 
 

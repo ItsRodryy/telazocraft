@@ -3,9 +3,14 @@ import json
 import os
 import urllib.parse
 import zipfile
+from functools import lru_cache
 from .util import http_json, guardar_json, leer_json, huella, descargar, archivar
 
 API = "https://api.modrinth.com/v2"
+
+@lru_cache(maxsize=512)
+def _huella_jar(ruta,tamano,modificado):
+    return huella(ruta,'sha1')
 
 
 def buscar(texto, servidor):
@@ -23,7 +28,7 @@ def inventario(servidor, red=True, cache_path=None):
     if cache_path and cache_path.exists():
         cache = leer_json(cache_path, cache)
     jars = sorted((servidor.ruta / "mods").glob("*.jar"))
-    hashes = {p.name: huella(p, "sha1") for p in jars}
+    hashes = {p.name: _huella_jar(str(p),p.stat().st_size,p.stat().st_mtime_ns) for p in jars}
     if red and hashes:
         versiones_remotas = http_json(API + "/version_files", {"hashes": list(hashes.values()), "algorithm": "sha1"})
         ids = sorted({v["project_id"] for v in versiones_remotas.values()})
@@ -41,7 +46,7 @@ def inventario(servidor, red=True, cache_path=None):
     return resultado
 
 
-def instalar(servidor, version_id, vistos=None):
+def instalar(servidor, version_id, vistos=None, progreso=lambda n,texto:None):
     servidor.exigir_parado()
     vistos = set() if vistos is None else vistos
     if version_id in vistos:
@@ -59,7 +64,7 @@ def instalar(servidor, version_id, vistos=None):
                 if not opciones:
                     raise ValueError("Falta una dependencia compatible")
                 id = opciones[0]["id"]
-            instalados += instalar(servidor, id, vistos)
+            instalados += instalar(servidor, id, vistos,progreso)
     archivo = next((f for f in v["files"] if f.get("primary")), v["files"][0])
     nombre = archivo["filename"]
     if not nombre.endswith(".jar") or "/" in nombre or "\\" in nombre:
@@ -69,7 +74,8 @@ def instalar(servidor, version_id, vistos=None):
         return instalados
     # Verificar la descarga antes de retirar la versión que ya funciona.
     temporal = servidor.ruta / "mods_retirados" / "descargas" / nombre
-    descargar(archivo["url"], temporal, archivo["hashes"]["sha512"], "sha512")
+    descargar(archivo["url"], temporal, archivo["hashes"]["sha512"], "sha512",
+              progreso=lambda n,total:progreso(int(100*n/total) if total else 0,'Descargando '+nombre))
     for viejo in inventario(servidor, red=True):
         if viejo["proyecto"] == v["project_id"]:
             retirar(servidor, viejo["archivo"])

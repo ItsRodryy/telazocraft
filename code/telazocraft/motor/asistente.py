@@ -11,6 +11,8 @@ from .hardcore import Hardcore
 def crear(biblioteca, id, nombre, tipo, version_mc, version_loader="", plantilla=None, hardcore=False,
           acceso="abierto", whitelist_de=None, mods=(), semilla="", instalar_java=False, progreso=lambda s: None):
     identificador(id)
+    progreso('@@PASOS Verificar Java|Preparar servidor|Instalar mods|Finalizar')
+    progreso('@@PASO 1/4 Verificando Java')
     if biblioteca.lock.exists():
         raise RuntimeError("Detén el servidor antes de crear otro")
     destino = biblioteca.ruta("servidores", id)
@@ -46,7 +48,7 @@ def crear(biblioteca, id, nombre, tipo, version_mc, version_loader="", plantilla
     datos = {"schema": 1, "nombre": nombre.strip() or id, "tipo": tipo, "version_mc": version_mc,
              "version_loader": version_loader, "java_mayor": mayor, "ram_mb": 4096, "acceso": acceso,
              "reinicio_h": 2, "apagar_si_vacio_min": 10, "copias": {"locales": 4, "sesion": 3, "diarias": 5},
-             "extras_cliente": ["xaeros-minimap", "xaeros-world-map"],
+             "extras_cliente": [],
              "hardcore": {"gracia_seg": 30, "partidas_guardadas": 3, "freno_reinicios": 0} if hardcore else None}
     guardar_json(temporal / "servidor.json", datos)
     servidor = object.__new__(Servidor)
@@ -61,24 +63,29 @@ def crear(biblioteca, id, nombre, tipo, version_mc, version_loader="", plantilla
         guardar_json(temporal / "whitelist.json", leer_json(origen.ruta / "whitelist.json", []))
     guardar_json(temporal / "ops.json", [])
     if not plantilla:
+        progreso('@@PASO 2/4 Preparando servidor')
         progreso("Instalando " + tipo)
         if tipo == "vanilla":
-            vanilla.instalar(servidor)
+            vanilla.instalar(servidor,progreso=lambda n,total:progreso(f'@@DESCARGA {n} {total}'))
         else:
+            progreso('@@INSTALANDO')
             neoforge.instalar(servidor)
     elif tipo == "vanilla":
         vanilla.instalar(servidor)
     if not (temporal / "user_jvm_args.txt").exists():
         (temporal / "user_jvm_args.txt").write_text("-Xms1024M\n-Xmx4096M\n", encoding="utf-8")
-    for slug in mods:
+    progreso('@@PASO 3/4 Instalando mods')
+    for i,slug in enumerate(mods):
         progreso("Instalando mod: " + slug)
         opciones = modrinth.versiones(slug, servidor)
         if not opciones:
             raise ValueError("No hay una versión compatible de " + slug)
-        modrinth.instalar(servidor, opciones[0]["id"])
+        modrinth.instalar(servidor, opciones[0]["id"],progreso=lambda n,t:progreso(f'@@PROGRESO {n} {t}'))
+        progreso(f'@@PROGRESO {int(100*(i+1)/len(mods))} Instalando mods')
     if hardcore:
         progreso("Preparando partida hardcore")
         Hardcore(servidor, lambda c: None).nueva_partida()
+    progreso('@@PASO 4/4 Finalizando servidor')
     temporal.rename(destino)
     return biblioteca.servidor(id)
 

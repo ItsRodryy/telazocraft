@@ -81,13 +81,20 @@ def fabricar(raiz, salida, iscc, repositorio="", version=__version__):
     for nombre in ("LICENSE", "THIRD_PARTY_NOTICES", "README.md"):
         shutil.copy2(raiz / nombre, paquete / nombre)
     # Se conservan los metadatos y textos de licencia originales instalados por pip y CPython.
-    script = "from telazocraft.app.qt_app import crear_app;from telazocraft.app.icons import logo_pixmap;import sys;app=crear_app();assert logo_pixmap(256).save(sys.argv[1],'ICO')"
+    script = "from telazocraft.app.qt_app import crear_app;from telazocraft.app.icons import logo_pixmap;from telazocraft.app.marca import guardar_icono, imagenes_instalador;import sys;app=crear_app();guardar_icono(sys.argv[1]);imagenes_instalador(sys.argv[1])"
     subprocess.run([str(python), "-B", "-c", script, str(paquete / "Telazocraft.ico")], check=True,
                    env={**os.environ, "QT_QPA_PLATFORM": "offscreen"})
+    compiladores=list((Path(os.environ.get('WINDIR','C:/Windows'))/'Microsoft.NET/Framework64').glob('v4*/csc.exe'))
+    if not compiladores:raise FileNotFoundError('Falta el compilador .NET Framework de Windows')
+    subprocess.run([str(compiladores[-1]),'/nologo','/target:winexe','/optimize+',
+                    '/reference:System.Windows.Forms.dll','/win32icon:'+str(paquete/'Telazocraft.ico'),
+                    '/out:'+str(paquete/'Telazocraft.exe'),str(raiz/'tools/launcher.cs')],check=True)
     with tempfile.TemporaryDirectory(prefix="telazocraft_smoke_build_") as temporal:
         (Path(temporal) / "telazocraft.json").write_text('{"schema":1}', encoding="utf-8")
         subprocess.run([str(python), "-B", "-m", "telazocraft", "--biblioteca", temporal, "--smoke"], check=True,
                        env={**os.environ, "QT_QPA_PLATFORM": "offscreen"}, timeout=30)
+        subprocess.run([str(paquete/'Telazocraft.exe'),'--biblioteca',temporal,'--smoke'],check=True,
+                       env={**os.environ,'QT_QPA_PLATFORM':'offscreen'},timeout=30)
     salida.mkdir(parents=True, exist_ok=True)
     exe = salida / f"Telazocraft-{version}-windows.exe"
     if exe.exists():

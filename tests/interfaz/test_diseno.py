@@ -31,6 +31,15 @@ class DisenoTests(unittest.TestCase):
         self.w.resize(1080, 720)
         self.w.show()
         self.app.processEvents()
+        self.esperar_resumen()
+        self.w.cargar_ajustes()
+
+    def esperar_resumen(self):
+        from PySide6.QtTest import QTest
+        for _ in range(200):
+            QTest.qWait(10)
+            if not self.w.resumen_cargando:break
+        self.assertFalse(self.w.resumen_cargando)
 
     def tearDown(self):
         self.w._salir = True
@@ -83,6 +92,7 @@ class DisenoTests(unittest.TestCase):
         c = Mock()
         c.estado = 'encendido'
         c.consola.lista_numero = 0
+        c.consola.jugadores=set();c.consola.entradas={}
         self.w.controles[self.w.selector.currentData()] = c
         self.w.nav.setCurrentRow(self.w.VISTAS.index("Inicio"))
         self.app.processEvents()
@@ -145,7 +155,10 @@ class DisenoTests(unittest.TestCase):
         with zipfile.ZipFile(s.ruta/'mods/ejemplo.jar','w') as z:z.writestr('mod.txt','ejemplo')
         guardar_json(s.ruta/'whitelist.json',[{'name':'Alex','uuid':'ejemplo'}])
         self.w.refrescar()
+        self.esperar_resumen()
+        self.w.nav.setCurrentRow(2)
         self.assertEqual(self.w.tabla_mods.rowCount(),1)
+        self.w.nav.setCurrentRow(1)
         self.assertEqual(self.w.tabla_jugadores.rowCount(),1)
         self.assertIn(str(s.ruta/'mods'),self.w.watcher.directories())
         self.assertFalse(self.w.controles)
@@ -187,7 +200,9 @@ class DisenoTests(unittest.TestCase):
         self.assertTrue(self.w.mini_contenido.isVisible())
         with patch.object(self.w,'refrescar_sistema'):
             self.w.gear.click()
-        self.assertEqual(self.w.stack.currentIndex(),5)
+        self.assertEqual(self.w.stack.currentIndex(),0)
+        self.assertTrue(self.w.sistema_dialogo.isVisible())
+        self.w.sistema_dialogo.reject()
         self.w.nav.setCurrentRow(0)
         self.assertEqual(self.w.stack.currentIndex(),0)
 
@@ -207,6 +222,8 @@ class DisenoTests(unittest.TestCase):
         self.w.vigilar()
         with zipfile.ZipFile(s.ruta/'mods/nuevo.jar','w') as z:z.writestr('info','nuevo')
         QTest.qWait(750)
+        self.esperar_resumen()
+        self.w.nav.setCurrentRow(2)
         self.assertEqual(self.w.tabla_mods.rowCount(),1)
 
     def test_confirmacion_muestra_diferencias_y_cancelar_es_predeterminado(self):

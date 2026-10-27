@@ -38,6 +38,8 @@ def importar(servidor):
         dia = dt.date.fromisoformat(fecha_archivo[0]) if fecha_archivo else dt.datetime.fromtimestamp(ruta.stat().st_mtime).date()
         abiertos = {}
         ultimo = None
+        primero = None
+        parada = None
         def cerrar(nick, fin):
             inicio, nombre = abiertos.pop(nick)
             if fin < inicio:
@@ -69,6 +71,7 @@ def importar(servidor):
                     if momento.tzinfo is None:
                         momento = momento.astimezone()
                     ultimo = momento
+                    if primero is None:primero=momento
                     evento = JUGADOR.search(linea)
                     if evento:
                         nombre, tipo = evento.groups(); nick = nombre.casefold()
@@ -79,11 +82,17 @@ def importar(servidor):
                         elif nick in abiertos:
                             cerrar(nick, momento)
                     if "Stopping server" in linea or "All dimensions are saved" in linea:
+                        if parada is None:parada=momento
                         for nick in list(abiertos):
                             cerrar(nick, momento)
-            if ultimo:
+            if ultimo and ruta.name!='latest.log':
                 for nick in list(abiertos):
                     cerrar(nick, ultimo)
+            fin=parada or (ultimo if ruta.name!='latest.log' else None)
+            if primero and fin and fin>=primero:
+                llave='encendido:'+hashlib.sha256(f'{primero.isoformat()}|{fin.isoformat()}'.encode()).hexdigest()
+                if llave not in ids:
+                    ids.add(llave);nuevos.append({'tipo':'encendido_log','fecha':fin.astimezone(dt.timezone.utc).isoformat(),'duracion_seg':(fin-primero).total_seconds(),'origen':'logs','import_id':llave})
         except (OSError, EOFError):
             continue
     if nuevos:
@@ -91,4 +100,4 @@ def importar(servidor):
         with diario.ruta.open("a", encoding="utf-8") as f:
             for r in nuevos:
                 f.write(json.dumps(r, ensure_ascii=False) + "\n")
-    return len(nuevos) // 2
+    return sum(r['tipo']=='salida' for r in nuevos)

@@ -485,7 +485,7 @@ QProgressBar {
     background: %(borde_sutil)s; border: 1px solid %(borde)s; border-radius: %(r_control)dpx;
     height: 12px; text-align: center;
 }
-QProgressBar::chunk { background: %(acento)s; border-radius: %(r_indicador)dpx; }
+QProgressBar::chunk { background: %(ok)s; border-radius: %(r_indicador)dpx; }
 
 /* Controles de entrada: PLANOS en reposo. El borde permanente convertia cualquier formulario en una
    reja de cajas; aqui el contorno solo aparece cuando el raton pasa por encima o el control tiene el
@@ -610,8 +610,9 @@ QListWidget#nav::item:selected { background: %(acento)s; color: %(sobre_acento)s
    recta de antes dejaba los paneles redondeados pegados dentro de una esquina recta. Las pestanas
    son pildoras sueltas, y el hueco bajo ellas es el mismo que separa dos paneles. */
 QTabWidget::pane {
-    border: none; background: transparent; top: %(separacion_paneles)dpx;
+    border: none; background: transparent; border-radius: %(r_panel)dpx; top: %(separacion_paneles)dpx;
 }
+QTabWidget > QStackedWidget, QTabBar { background: transparent; border-radius: %(r_panel)dpx; }
 QTabBar::tab {
     padding: 8px 16px; background: %(superficie_alta)s; margin-right: 6px;
     border: 1px solid %(borde_sutil)s; border-radius: %(r_control)dpx;
@@ -672,7 +673,7 @@ QHeaderView::section {
 QHeaderView::section:horizontal { border-right: 1px solid %(borde_sutil)s; }
 QHeaderView::section:first { border-top-left-radius: %(r_panel)dpx; }
 QHeaderView::section:last { border-top-right-radius: %(r_panel)dpx; }
-QTableCornerButton::section { background: %(superficie_alta)s; border: none; }
+QTableCornerButton::section { background: %(superficie_alta)s; border: none; border-top-left-radius: %(r_panel)dpx; }
 QPlainTextEdit#log {
     background: %(superficie_opaca)s; border: 1px solid %(borde)s; border-radius: %(r_panel)dpx;
     font-family: 'Cascadia Mono', 'Consolas', monospace; font-size: 12px; padding: 8px;
@@ -722,7 +723,7 @@ QScrollArea#scrollEnPanel QScrollBar:vertical {
 QStatusBar { background: %(superficie)s; color: %(texto_tenue)s; border-top: 1px solid %(borde)s; }
 QStatusBar QLabel { color: %(texto_tenue)s; }
 QStatusBar::item { border: none; }
-QToolTip { background: %(superficie_opaca)s; color: %(texto)s; border: 1px solid %(borde)s; padding: 4px 8px; }
+QToolTip { background: %(superficie_opaca)s; color: %(texto)s; border: 1px solid %(borde)s; border-radius: %(r_control)dpx; padding: 4px 8px; }
 """ % {
         "fondo": t.fondo, "fondo_base": fondo_base, "superficie": superficie,
         "linea_formulario": linea_formulario,

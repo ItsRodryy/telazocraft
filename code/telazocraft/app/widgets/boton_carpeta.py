@@ -11,6 +11,7 @@ o `xdg-open` a mano obligaría a escribir dos caminos y a mantener los dos.
 """
 
 import os
+import logging
 
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
@@ -58,6 +59,12 @@ class BotonCarpeta(IconButton):
     def _abrir(self):
         try:
             ruta = self._proveedor() or ""
-        except Exception:
-            ruta = ""
-        return abrir_carpeta(ruta)
+        except Exception as exc:
+            logging.getLogger(__name__).exception('No se pudo obtener la carpeta')
+            if hasattr(self.window(),'mostrar_error'):self.window().mostrar_error(tr('No se pudo abrir la carpeta: %s')%exc)
+            return False
+        ok=abrir_carpeta(ruta)
+        if not ok:
+            logging.getLogger(__name__).warning('No se pudo abrir la carpeta')
+            if hasattr(self.window(),'mostrar_error'):self.window().mostrar_error(tr('No se pudo abrir la carpeta'))
+        return ok

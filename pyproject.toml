@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "telazocraft"
-version = "0.2.1"
+version = "0.3.0"
 description = "Gestor de bibliotecas de servidores de Minecraft"
 authors = [{name = "Adrián Rodríguez Rodríguez"}]
 requires-python = ">=3.11"
@@ -15,3 +15,6 @@ telazocraft = "telazocraft.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["code"]
+
+[tool.setuptools.package-data]
+telazocraft = ["motor/*.ps1"]

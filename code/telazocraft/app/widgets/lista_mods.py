@@ -8,6 +8,7 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QListWidget, QListWidgetItem
 from ...common import ajustes
 from .. import icons
+from ...common.i18n import tr
 
 
 class ListaMods(QListWidget):
@@ -27,7 +28,7 @@ class ListaMods(QListWidget):
         for hit in hits:
             url = hit.get('icon_url') or ''
             ruta = self.ruta_icono(url)
-            item = QListWidgetItem(QIcon(str(ruta)) if ruta.exists() else icons.glifo('mods', 24), hit['title'])
+            item = QListWidgetItem(QIcon(str(ruta)) if ruta.exists() else icons.glifo('mods', 24), hit['title']+(' · '+tr('Instalado') if hit.get('instalado') else ''))
             item.setData(Qt.UserRole, url)
             self.addItem(item)
             if url and not ruta.exists():

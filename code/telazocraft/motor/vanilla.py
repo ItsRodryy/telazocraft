@@ -14,9 +14,9 @@ def metadatos(version):
     return http_json(v["url"])
 
 
-def instalar(servidor):
+def instalar(servidor, progreso=lambda n,total:None):
     d = metadatos(servidor.datos["version_mc"])
     f = d["downloads"]["server"]
-    descargar(f["url"], servidor.ruta / "server.jar", f["sha1"], "sha1")
+    descargar(f["url"], servidor.ruta / "server.jar", f["sha1"], "sha1",progreso=progreso)
     servidor.datos["java_mayor"] = d["javaVersion"]["majorVersion"]
     servidor.guardar()

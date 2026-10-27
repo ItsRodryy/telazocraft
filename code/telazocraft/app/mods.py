@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import threading
 import unicodedata
 import urllib.request
@@ -26,6 +27,9 @@ class BusMods(QObject):
 
 
 class PantallasMods:
+    def progreso_mod(self,servidor):
+        return lambda n,t:self.bus.evento.emit(servidor.id,'progreso',{'valor':n,'texto':t})
+
     def construir_mods(self):
         self.mods_datos=[];self.mods_updates={};self.mods_cargando=set();self.mods_enriquecidos=set()
         self.bus_mods=BusMods(self);self.bus_mods.listo.connect(self.mods_recibidos);self.bus_mods.iconos.connect(lambda:self.pintar_mods(self.mods_datos))
@@ -33,7 +37,7 @@ class PantallasMods:
         self.tabla_mods.verticalHeader().setDefaultSectionSize(48)
         self.anadir_mod_boton=boton('Añadir mod',self.anadir_mod,True);self.anadir_mod_boton.setIcon(icons.glifo('mas',16))
         self.mods_contador=QLabel()
-        self.paginas['Mods'].layout().addWidget(style.tarjeta(fila(titulo('Mods'),self.mods_contador,self.anadir_mod_boton,boton('Zip para amigos',self.zip_amigos),BotonCarpeta(lambda:str(self.biblioteca.ruta('exportaciones',self.servidor.id)) if self.servidor else '',tr('Abrir carpeta de exportaciones'))),self.tabla_mods))
+        self.paginas['Mods'].layout().addWidget(style.tarjeta(fila(titulo('Mods'),self.mods_contador,self.anadir_mod_boton,boton('Paquete para amigos',self.zip_amigos),BotonCarpeta(lambda:str(self.biblioteca.ruta('exportaciones',self.servidor.id)) if self.servidor else '',tr('Abrir carpeta de exportaciones'))),self.tabla_mods))
         panel=self.paginas['Mods'];panel.setAcceptDrops(True)
         panel.dragEnterEvent=lambda e:e.acceptProposedAction() if e.mimeData().hasUrls() and all(u.isLocalFile() and u.toLocalFile().lower().endswith('.jar') for u in e.mimeData().urls()) else e.ignore()
         panel.dropEvent=self.soltar_jars
@@ -43,7 +47,7 @@ class PantallasMods:
         return ajustes.ruta().parent/'mods'/key/'inventario.json'
 
     def actualizar_mods(self):
-        if self.servidor:self.pintar_mods(modrinth.inventario(self.servidor,False,self.cache_mods(self.servidor)))
+        if self.servidor:self.pintar_mods(self.mods_datos)
 
     def pintar_mods(self,datos):
         datos=sorted(datos,key=lambda m:(m['nombre'] or m['archivo']).casefold())
@@ -92,15 +96,21 @@ class PantallasMods:
                         if descargados%6==0:self.bus_mods.iconos.emit()
                     except OSError:pass
                 self.bus_mods.iconos.emit()
-            except Exception:
-                self.bus_mods.listo.emit(str(s.ruta),None,{})
+            except Exception as exc:
+                logging.getLogger(__name__).exception('No se pudieron consultar los mods')
+                self.mods_enriquecidos.discard(firma)
+                self.bus_mods.listo.emit(str(s.ruta),None,{'error':str(exc)})
         threading.Thread(target=leer,daemon=True).start()
 
     def mods_recibidos(self,ruta,datos,updates):
         self.mods_cargando.discard(ruta)
         if self.servidor and str(self.servidor.ruta)==ruta:
-            if datos is not None:self.mods_updates=updates;self.pintar_mods(datos)
-            else:self.aviso.setText(tr('Sin red: mostrando los mods y los iconos disponibles en caché'))
+            if datos is not None:
+                self.mods_updates=updates
+                if self.servidor.id in self.resumenes:self.resumenes[self.servidor.id]['mods']=datos
+                self.mods_datos=datos
+                if self.stack.currentIndex()==2:self.pintar_mods(datos)
+            else:self.aviso.setText(tr('No se pudieron consultar los mods: %s')%updates.get('error',''))
 
     def menu_mod(self,m):
         s=self.servidor;menu=QMenu(self)
@@ -114,22 +124,27 @@ class PantallasMods:
         buscar=QLineEdit();buscar.setPlaceholderText(tr('Buscar mods compatibles en Modrinth'))
         lista=ListaMods();hits=[];s=self.servidor
         def pintar(datos):
+            instalados={m['proyecto'] for m in self.mods_datos if m.get('proyecto')}
+            datos=[{**h,'instalado':h['project_id'] in instalados} for h in datos]
             hits[:]=datos;lista.cargar(datos)
-        def consultar():
-            if buscar.text().strip():self.trabajo(lambda:modrinth.buscar(buscar.text().strip(),s),pintar)
-        buscar.returnPressed.connect(consultar)
-        d.formulario.addWidget(fila(buscar,boton('Buscar',consultar)));d.formulario.addWidget(lista)
+        from .busqueda_mods import BusquedaMods
+        buscador=BusquedaMods(d,lambda:s);buscador.listo.connect(pintar);buscar.textChanged.connect(buscador.cambiar)
+        ayuda=QLabel(tr('Resultados de Modrinth para %s %s')%(s.datos['version_mc'],s.datos['tipo']))
+        estado=QLabel();estado.setWordWrap(True);buscador.estado.connect(estado.setText)
+        buscar.returnPressed.connect(buscador.consultar)
+        d.formulario.addWidget(buscar);d.formulario.addWidget(ayuda);d.formulario.addWidget(estado);d.formulario.addWidget(lista)
         d.formulario.addWidget(boton('Elegir archivos .jar',lambda:(d.reject(),self.agregar_jar())))
         d.terminar_botones('Instalar seleccionado')
         d.setAcceptDrops(True);d.dragEnterEvent=lambda e:e.acceptProposedAction() if e.mimeData().hasUrls() else e.ignore()
         d.dropEvent=lambda e:(d.reject(),self._agregar_jars([u.toLocalFile() for u in e.mimeData().urls()]))
         if d.exec() and 0<=lista.currentRow()<len(hits):
             h=hits[lista.currentRow()]
+            if h.get('instalado'):return
             def opciones(v):
                 if not v:self.mostrar_error(tr('No hay una versión compatible'));return
                 version=v[0]
                 dependencias=[x for x in version.get('dependencies',[]) if x['dependency_type']=='required']
-                if confirmar(self,tr('Se instalará el mod y sus dependencias obligatorias.'),'Instalar mod',[(h['title'],tr('No instalado'),version['version_number']),(tr('Dependencias obligatorias'),0,len(dependencias))]):self.trabajo(lambda:modrinth.instalar(s,version['id']),lambda _:self.refrescar())
+                if confirmar(self,tr('Se instalará el mod y sus dependencias obligatorias.'),'Instalar mod',[(h['title'],tr('No instalado'),version['version_number']),(tr('Dependencias obligatorias'),0,len(dependencias))]):self.trabajo(lambda:modrinth.instalar(s,version['id'],progreso=self.progreso_mod(s)),lambda _:self.refrescar())
             self.trabajo(lambda:modrinth.versiones(h['project_id'],s),opciones)
 
     def agregar_jar(self):
@@ -148,11 +163,11 @@ class PantallasMods:
 
     def actualizar_mod(self,m):
         s=self.servidor;v=self.mods_updates.get(m['archivo'],{}).get('nueva')
-        if v and confirmar(self,tr('Se conservará el JAR anterior.'),'Actualizar mod',[(m['nombre'],m['version'],v['version_number'])]):self.trabajo(lambda:modrinth.instalar(s,v['id']),lambda _:self.refrescar())
+        if v and confirmar(self,tr('Se conservará el JAR anterior.'),'Actualizar mod',[(m['nombre'],m['version'],v['version_number'])]):self.trabajo(lambda:modrinth.instalar(s,v['id'],progreso=self.progreso_mod(s)),lambda _:self.refrescar())
 
     def zip_amigos(self):
         s=self.servidor
-        if s and confirmar(self,tr('Se creará el ZIP con los mods de cliente y las instrucciones.'),'Crear ZIP',[(tr('Exportación'),tr('Sin archivo nuevo'),tr('ZIP para amigos'))]):self.trabajo(lambda:exportaciones.crear(s),lambda r:self.aviso.setText(tr('ZIP creado: %s')%r[0].name))
+        if s and confirmar(self,tr('Se incluirán mods de cliente, extras, instalador de NeoForge e instrucciones.'),'Crear paquete para amigos',[(tr('Exportación'),tr('Sin archivo nuevo'),tr('Paquete para amigos'))]):self.trabajo(lambda:exportaciones.crear(s,progreso=lambda n,t:self.bus.evento.emit(s.id,'progreso',{'valor':n,'texto':t})),lambda r:self.aviso.setText(tr('Paquete creado: %s')%r[0].name))
 
     def pregenerar(self):
         s, c = self.servidor, self.control

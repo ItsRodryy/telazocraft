@@ -6,11 +6,14 @@ import urllib.parse
 import urllib.request
 from . import mojang, propiedades
 from .diario import Diario
+from .tiempos import sesiones_jugadores
 from .util import leer_json, guardar_json, http_json
 
 
-def conocidos(servidor, conectados=()):
+def conocidos(servidor, conectados=(), entradas=None, ahora=None, registros=None):
     datos = {}
+    registros=Diario(servidor).leer() if registros is None else registros
+    horas,_=sesiones_jugadores(registros,conectados,entradas,ahora)
     for archivo in ("whitelist.json", "ops.json", "usercache.json", "banned-players.json"):
         for d in leer_json(servidor.ruta / archivo, []):
             if "name" in d and "uuid" in d:
@@ -18,19 +21,16 @@ def conocidos(servidor, conectados=()):
                 datos.setdefault(clave, {"nick": d["name"], "uuid": d["uuid"], "horas": 0, "ultima": ""})
                 datos[clave][archivo] = True
                 datos[clave].setdefault("uuids", set()).add(d["uuid"])
-    for d in Diario(servidor).leer():
+    for d in registros:
         nick = d.get("jugador")
         if nick:
             row = datos.setdefault(nick.casefold(), {"nick": nick, "uuid": "", "horas": 0, "ultima": ""})
             row["ultima"] = max(row["ultima"], d.get("fecha", ""))
-            row["horas"] += d.get("duracion_seg", 0) / 3600
     for nick in conectados:
         datos.setdefault(nick.casefold(), {"nick": nick, "uuid": "", "horas": 0, "ultima": ""})
     for row in datos.values():
-        for uuid in row.pop("uuids", {row["uuid"]}):
-            estadisticas = leer_json(servidor.mundo / "stats" / (uuid + ".json"), {})
-            ticks = estadisticas.get("stats", {}).get("minecraft:custom", {}).get("minecraft:play_time", 0)
-            row["horas"] = max(row["horas"], ticks / 72000)
+        row.pop('uuids',None)
+        row['horas']=horas.get(row['nick'].casefold(),0)
         row["conectado"] = row["nick"].casefold() in {n.casefold() for n in conectados}
     # usercache también contiene consultas de skins de mods/NPC; no son jugadores conocidos.
     visibles = [d for d in datos.values() if d['conectado'] or d['ultima'] or d['horas'] or

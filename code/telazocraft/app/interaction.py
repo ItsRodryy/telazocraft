@@ -3,10 +3,40 @@
 
 import time
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QCursor, QGuiApplication
+from PySide6.QtCore import Qt, QObject, QEvent, QRectF
+from PySide6.QtGui import QCursor, QGuiApplication, QPainterPath, QRegion
 from PySide6.QtWidgets import (QAbstractButton, QAbstractItemView, QAbstractSlider,
-                               QComboBox, QHeaderView, QTabBar)
+                               QComboBox, QHeaderView, QTabBar, QPushButton, QLineEdit,
+                               QAbstractSpinBox, QMenu, QTableView, QWidget)
+
+ALTO_CONTROL = 36
+
+def preparar_control(widget):
+    if isinstance(widget, (QAbstractButton, QComboBox, QAbstractSlider, QTabBar, QMenu)):
+        widget.setCursor(Qt.PointingHandCursor)
+    if isinstance(widget, QAbstractItemView) and not isinstance(widget, QHeaderView):
+        widget.viewport().setCursor(Qt.PointingHandCursor)
+    if isinstance(widget, (QPushButton, QComboBox, QLineEdit, QAbstractSpinBox)):
+        if widget.objectName() == 'spinbtn' or isinstance(widget.parentWidget(), QAbstractSpinBox):
+            return
+        widget.setFixedHeight(ALTO_CONTROL)
+        if isinstance(widget, QPushButton) and not widget.text():
+            widget.setFixedWidth(ALTO_CONTROL)
+
+class Interacciones(QObject):
+    """Polish se entrega también a los controles creados después de abrir una ventana."""
+    def eventFilter(self, objeto, evento):
+        if evento.type() in (QEvent.Polish, QEvent.Show):
+            preparar_control(objeto)
+        if evento.type() in (QEvent.Show, QEvent.Resize) and isinstance(objeto, QWidget):
+            if isinstance(objeto, (QTableView, QMenu)) or objeto.objectName() in ('QTipLabel', 'qt_tooltip_label') or objeto.metaObject().className() == 'QComboBoxPrivateContainer':
+                path=QPainterPath();path.addRoundedRect(QRectF(objeto.rect()),10,10)
+                objeto.setMask(QRegion(path.toFillPolygon().toPolygon()))
+        return False
+
+def instalar(app):
+    if not hasattr(app, '_interacciones'):
+        app._interacciones=Interacciones(app);app.installEventFilter(app._interacciones)
 
 # Cuánto tiempo tiene sentido decir «buscando cámara» desde que abre el programa. El descubrimiento
 # sondea cada 5 s y una iRayple tarda dos o tres vueltas en aparecer por unicast; 30 s cubren eso de
@@ -80,7 +110,9 @@ def centrar_en_monitor(ventana):
 
 def aplicar_cursores_interactivos(raiz):
     """Usa la mano en controles que ejecutan o seleccionan algo; conserva I-beam en textos."""
-    tipos = (QAbstractButton, QComboBox, QAbstractSlider, QTabBar)
+    preparar_control(raiz)
+    for widget in raiz.findChildren(QWidget): preparar_control(widget)
+    tipos = (QAbstractButton, QComboBox, QAbstractSlider, QTabBar, QMenu)
     for tipo in tipos:
         for widget in raiz.findChildren(tipo):
             widget.setCursor(Qt.PointingHandCursor)

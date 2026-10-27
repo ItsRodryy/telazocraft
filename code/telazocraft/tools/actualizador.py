@@ -5,9 +5,9 @@ from ..motor.util import descargar
 from ..motor.java import OCULTO
 
 
-def preparar(actualizacion):
+def preparar(actualizacion, progreso=lambda n,t:None):
     carpeta = Path(tempfile.mkdtemp(prefix="telazocraft_actualizacion_"))
-    return descargar(actualizacion["url"], carpeta / actualizacion["nombre"], actualizacion["sha256"])
+    return descargar(actualizacion["url"], carpeta / actualizacion["nombre"], actualizacion["sha256"],progreso=progreso)
 
 
 def ejecutar(instalador):

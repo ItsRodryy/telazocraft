@@ -17,6 +17,7 @@ from ..common import ajustes
 from ..common.i18n import tr
 from ..motor import jugadores,propiedades,copias,mojang,java
 from ..motor.diario import Diario
+from ..motor.tiempos import sesiones_jugadores,horas_encendido
 from ..motor.sync import GuardiaSync
 from ..motor.util import leer_json
 from .. import __version__
@@ -64,14 +65,18 @@ def limpiar(layout):
 
 class Grafica(QWidget):
     def __init__(self,nombre,clave,maximo):
-        super().__init__();self.nombre,self.clave,self.maximo=nombre,clave,maximo;self.muestras=[];self.setMinimumHeight(115)
+        super().__init__();self.nombre,self.clave,self.maximo=nombre,clave,maximo;self.muestras=[];self.setFixedHeight(130)
     def paintEvent(self,e):
         p=QPainter(self);p.setRenderHint(QPainter.Antialiasing);t=style.tema_actual();p.setPen(QColor(t.texto_tenue))
         datos=[d[self.clave] for d in self.muestras[-120:] if d.get(self.clave) is not None]
         p.drawText(12,22,tr('%s · %s')%(self.nombre,f'{datos[-1]:.1f}' if datos else tr('sin datos')))
+        techo=self.maximo or max([1]+datos);p.setPen(QPen(QColor(t.borde),1))
+        p.drawLine(34,36,34,self.height()-24);p.drawLine(34,self.height()-24,self.width()-12,self.height()-24)
+        p.setPen(QColor(t.texto_tenue))
+        p.drawText(2,42,f'{techo:.0f}');p.drawText(12,self.height()-24,'0');p.drawText(34,self.height()-5,tr('Sesión'));p.drawText(self.width()-55,self.height()-5,tr('Ahora'))
         if len(datos)>1:
             techo=self.maximo or max(1,max(datos));p.setPen(QPen(QColor(t.acento_claro),2))
-            p.drawPolyline(QPolygonF([QPointF(12+i*(self.width()-24)/(len(datos)-1),self.height()-12-min(techo,max(0,v))/techo*(self.height()-50)) for i,v in enumerate(datos)]))
+            p.drawPolyline(QPolygonF([QPointF(34+i*(self.width()-46)/(len(datos)-1),self.height()-24-min(techo,max(0,v))/techo*(self.height()-62)) for i,v in enumerate(datos)]))
         p.end()
 
 
@@ -84,14 +89,16 @@ class PantallasGestion:
         self.conectados_caja=style.agrupador();self.conectados_caja.setLayout(QHBoxLayout());self.conectados_caja.layout().setContentsMargins(0,0,0,0)
         self.paginas['Inicio'].layout().addWidget(style.tarjeta(titulo('Conectados'),self.conectados_caja))
         self.resumen_valores={};resumen=style.agrupador();h=QHBoxLayout(resumen);h.setContentsMargins(0,0,0,0);h.setSpacing(style.SEPARACION_PANELES)
-        for clave,etiqueta in (('jugadores','Jugadores'),('horas','Horas jugadas'),('mods','Mods'),('copia','Última copia')):
+        for clave,etiqueta in (('jugadores','Jugadores'),('horas','Horas jugadas'),('encendido','Horas encendido'),('mods','Mods'),('copia','Última copia')):
             valor=QLabel('—');valor.setObjectName('cifra');rotulo=QLabel(tr(etiqueta));rotulo.setObjectName('tenue')
             self.resumen_valores[clave]=valor;h.addWidget(style.tarjeta(valor,rotulo),1)
         self.paginas['Inicio'].layout().addWidget(resumen)
         self.partidas_caja=style.agrupador();self.partidas_caja.setLayout(QVBoxLayout());self.partidas_caja.layout().setContentsMargins(0,0,0,0);self.partidas_caja.layout().setSpacing(4)
         self.paginas['Inicio'].layout().addWidget(style.tarjeta(titulo('Últimas partidas'),self.partidas_caja))
         self.graficas=[Grafica(tr('CPU (%)'),'cpu_pct',100),Grafica(tr('Java (MB)'),'ram_mb',None),Grafica(tr('TPS'),'tps',20)]
-        self.graficas_panel=fila(*(style.tarjeta(g) for g in self.graficas));self.paginas['Inicio'].layout().addWidget(self.graficas_panel);self.paginas['Inicio'].layout().addStretch()
+        self.graficas_panel=style.agrupador();graficas_layout=QHBoxLayout(self.graficas_panel);graficas_layout.setContentsMargins(0,0,0,0)
+        for g in self.graficas:graficas_layout.addWidget(style.tarjeta(g),1)
+        self.paginas['Inicio'].layout().addWidget(self.graficas_panel);self.paginas['Inicio'].layout().addStretch()
         self.timer_metricas=QTimer(self);self.timer_metricas.setInterval(5000);self.timer_metricas.timeout.connect(self.medir)
         self.datos_jugadores=[]
         self.tabla_jugadores=TablaDatos([tr(s) for s in ('Jugador','Estado','Horas','Última conexión','Permisos','')],columnas_accion=(5,),columna_estirada=0,anchos={0:200,1:140,2:110,3:180,4:220,5:52})
@@ -108,6 +115,12 @@ class PantallasGestion:
         self.paginas['Copias'].layout().addWidget(style.tarjeta(fila(titulo('Copias'),self.crear_copia_boton)))
         scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setFrameShape(QScrollArea.NoFrame);scroll.setWidget(self.copias_contenido);self.paginas['Copias'].layout().addWidget(scroll,1)
         self.construir_ajustes()
+        pagina=self.paginas['Inicio'];contenido=style.agrupador();interior=QVBoxLayout(contenido);interior.setContentsMargins(0,0,0,0);interior.setSpacing(style.SEPARACION_PANELES)
+        while pagina.layout().count():
+            item=pagina.layout().takeAt(0)
+            if item.widget():interior.addWidget(item.widget())
+            else:interior.addItem(item)
+        scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setFrameShape(QScrollArea.NoFrame);scroll.setWidget(contenido);pagina.layout().addWidget(scroll)
 
     def actualizar_inicio(self):
         s=self.servidor
@@ -116,22 +129,25 @@ class PantallasGestion:
         d=s.datos;estado=self.control.estado if self.control else tr('apagado')
         tipo={'neoforge':'NeoForge','vanilla':'Vanilla'}.get(d['tipo'],d['tipo'])
         self.inicio_detalle.setText(tr('%s · %s · Minecraft %s · %s · %.1f GB de RAM')%(tr(estado.capitalize()),tipo,d['version_mc'],tr('Solo premium') if d['acceso']=='premium' else tr('Acceso abierto'),d['ram_mb']/1024))
-        diario=Diario(s).leer()
+        diario=self.registros()
         registros=[r for r in diario if r.get('tipo') in ('arranque','entrada')];ultimo=max(registros,key=lambda r:r.get('fecha',''),default={})
         self.resumen_valores['jugadores'].setText(str(len(self.datos_jugadores)))
-        self.resumen_valores['horas'].setText(tr('%s h')%round(sum(j['horas'] for j in self.datos_jugadores)))
+        self.resumen_valores['horas'].setText(duracion_legible(sum(j['horas'] for j in self.datos_jugadores)))
+        self.resumen_valores['encendido'].setText(duracion_legible(horas_encendido(diario,bool(self.control and self.control.estado=='encendido'))))
         self.resumen_valores['mods'].setText(str(len(self.mods_datos)))
         self.resumen_valores['copia'].setText(hace(self.copias_datos[0].stat().st_mtime) if self.copias_datos else tr('Ninguna'))
         limpiar(self.partidas_caja.layout())
         partidas=sorted((r for r in diario if r.get('tipo')=='salida' and r.get('jugador')),key=lambda r:r.get('fecha',''),reverse=True)[:6]
+        _,vivas=sesiones_jugadores(diario,self.control.consola.jugadores if self.control else (),self.control.consola.entradas if self.control else {})
+        partidas=(vivas+partidas)[:6]
         if not partidas:self.partidas_caja.layout().addWidget(QLabel(tr('Todavía no ha jugado nadie')))
         for r in partidas:
             cara=QLabel();cara.setPixmap(self.cabeza(r['jugador']).pixmap(20,20))
-            cuando=QLabel(fecha_legible(r.get('fecha')));cuando.setObjectName('tenue')
+            cuando=QLabel(tr('jugando') if r.get('en_curso') else fecha_legible(r.get('fecha')));cuando.setObjectName('tenue')
             linea=fila(cara,QLabel(r['jugador']),cuando)
             if 'duracion_seg' in r:linea.layout().addWidget(QLabel(duracion_legible(r['duracion_seg']/3600)))
             self.partidas_caja.layout().addWidget(linea)
-        total=sum(p.stat().st_size for p in s.ruta.rglob('*') if p.is_file())
+        total=self.resumenes.get(s.id,{}).get('tamano',0)
         self.inicio_uso.setText(tr('Último uso: %s · %s · %.2f GB')%(fecha_legible(ultimo.get('fecha')),ultimo.get('equipo',tr('equipo sin registrar')),total/2**30))
         self.inicio_direccion.setText(self.direccion.text())
         limpiar(self.conectados_caja.layout());conectados=list(self.control.consola.jugadores) if self.control else []
@@ -161,7 +177,7 @@ class PantallasGestion:
         threading.Thread(target=descargar,daemon=True).start()
 
     def actualizar_jugadores(self):
-        if self.servidor:self.pintar_jugadores(jugadores.conocidos(self.servidor,set(self.control.consola.jugadores) if self.control else ()))
+        if self.servidor:self.pintar_jugadores(self.jugadores_actuales())
 
     def pintar_jugadores(self,datos):
         self.datos_jugadores=datos;vaciar_tabla(self.tabla_jugadores);self.tabla_jugadores.setRowCount(len(datos))
@@ -201,13 +217,12 @@ class PantallasGestion:
     def medir(self):
         if not self.control or self.control.estado!='encendido' or self.stack.currentWidget() is not self.paginas['Inicio'] or not self.isVisible():return
         try:
-            self.control.medir_rendimiento()
             for g in self.graficas:g.muestras=list(self.control.rendimiento.muestras);g.update()
         except Exception as exc:self.mostrar_error(str(exc))
 
     def actualizar_diario(self,*_):
         if not self.servidor:return
-        filtro=self.filtro_diario.text().casefold();datos=sorted(Diario(self.servidor).leer(),key=lambda r:r.get('fecha',''),reverse=True)
+        filtro=self.filtro_diario.text().casefold();datos=sorted(self.registros(),key=lambda r:r.get('fecha',''),reverse=True)
         datos=[d for d in datos if not filtro or filtro in d.get('jugador','').casefold()]
         self.tabla_diario.setRowCount(len(datos))
         for r,d in enumerate(datos):
@@ -264,7 +279,7 @@ class PantallasGestion:
 
     def actualizar_copias(self):
         if not self.servidor:return
-        carpeta=self.biblioteca.ruta('copias',self.servidor.id);self.copias_datos=sorted(carpeta.glob('*/*.zip'),key=lambda p:p.stat().st_mtime,reverse=True);limpiar(self.copias_layout)
+        limpiar(self.copias_layout)
         if not self.copias_datos:self.copias_layout.addWidget(style.tarjeta(QLabel(tr('Todavía no hay copias'))))
         for p in self.copias_datos:
             tipo=(tr('Partida'),'peligro') if p.parent.name=='partidas' else (tr('Diaria'),'ok') if 'diaria' in p.name else tr('Sesión') if 'sesion' in p.name else tr('Local')
@@ -279,22 +294,28 @@ class PantallasGestion:
 
     def copia_ahora(self):
         s=self.servidor
-        if s and confirmar(self,tr('Se creará una copia del mundo del servidor parado.'),'Crear copia',[(tr('Copias'),len(self.copias_datos),len(self.copias_datos)+1)]):self.trabajo(lambda:copias.crear(s),lambda _:self.refrescar())
+        if s and confirmar(self,tr('Se creará una copia del mundo del servidor parado.'),'Crear copia',[(tr('Copias'),len(self.copias_datos),len(self.copias_datos)+1)]):self.trabajo(lambda:copias.crear(s,progreso=lambda n,t:self.bus.evento.emit(s.id,'progreso',{'valor':n,'texto':t})),lambda _:self.refrescar())
 
     def restaurar_copia(self,p):
         s=self.servidor
         if s and confirmar(self,tr('El mundo actual se apartará en archivo. Se perderá el progreso posterior a esta copia en el mundo activo.'),'Restaurar copia',[(tr('Mundo activo'),tr('Actual'),p.name)],True):self.trabajo(lambda:copias.restaurar(s,p),lambda _:self.refrescar())
 
     def construir_sistema(self):
+        self.sistema_dialogo=Dialogo(self,'Telazocraft');self.sistema_dialogo.resize(660,500)
+        contenedor=style.agrupador();contenedor.setLayout(QVBoxLayout());self.sistema_dialogo.formulario.addWidget(contenedor)
+        self.sistema_contenido=contenedor
         self.direccion=QLineEdit(leer_json(self.biblioteca.raiz/'telazocraft.json').get('direccion',''));self.direccion.setReadOnly(True)
         self.actualizacion=None;self.actualizar_app_boton=boton('Instalar actualización',self.instalar_actualizacion,True);self.actualizar_app_boton.setEnabled(False)
         self.sistema_texto=QLabel(tr('Consultando el estado…'));self.sistema_texto.setWordWrap(True)
         version=QLabel(tr('Versión %s')%__version__);version.setObjectName('tenue')
-        self.paginas['Telazocraft'].layout().addWidget(style.tarjeta(titulo('Telazocraft'),version,fila(boton('Buscar actualizaciones',self.buscar_actualizacion),self.actualizar_app_boton)))
-        self.paginas['Telazocraft'].layout().addWidget(style.tarjeta(titulo('Estado del equipo'),self.sistema_texto))
+        contenedor.layout().addWidget(style.tarjeta(titulo('Telazocraft'),version,fila(boton('Buscar actualizaciones',self.buscar_actualizacion),self.actualizar_app_boton)))
+        contenedor.layout().addWidget(style.tarjeta(titulo('Estado del equipo'),self.sistema_texto))
         self.biblioteca_etiqueta=EtiquetaElidida(str(self.biblioteca.raiz))
-        self.paginas['Telazocraft'].layout().addWidget(style.tarjeta(titulo('Biblioteca'),self.biblioteca_etiqueta,fila(BotonCarpeta(lambda:str(self.biblioteca.raiz),tr('Abrir biblioteca')),boton('Cambiar biblioteca',self.cambiar_biblioteca))))
-        self.paginas['Telazocraft'].layout().addStretch()
+        contenedor.layout().addWidget(style.tarjeta(titulo('Biblioteca'),self.biblioteca_etiqueta,fila(BotonCarpeta(lambda:str(self.biblioteca.raiz),tr('Abrir biblioteca')),boton('Cambiar biblioteca',self.cambiar_biblioteca))))
+        contenedor.layout().addStretch()
+
+    def abrir_sistema(self):
+        self.refrescar_sistema();self.sistema_dialogo.show();self.sistema_dialogo.raise_();self.sistema_dialogo.activateWindow()
 
     def cambiar_biblioteca(self):
         from PySide6.QtWidgets import QFileDialog
@@ -303,14 +324,17 @@ class PantallasGestion:
         if not ruta:return
         from ..motor.biblioteca import Biblioteca
         nueva=Biblioteca(ruta)
-        if confirmar(self,tr('Se cambiará la biblioteca de esta aplicación.'),'Cambiar biblioteca',[(tr('Biblioteca'),str(self.biblioteca.raiz),str(nueva.raiz))]):self.biblioteca=nueva;self.biblioteca_etiqueta.setText(str(nueva.raiz));self.recargar_servidores()
+        if confirmar(self,tr('Se cambiará la biblioteca de esta aplicación.'),'Cambiar biblioteca',[(tr('Biblioteca'),str(self.biblioteca.raiz),str(nueva.raiz))]):
+            for hilo in self.lectores:hilo.join(5)
+            self.biblioteca=nueva;self.resumenes.clear();self.logs_importados.clear();self.resumen_cargando.clear();self.mods_enriquecidos.clear();self.biblioteca_etiqueta.setText(str(nueva.raiz));self.recargar_servidores()
 
     def refrescar_sistema(self):
+        control=self.control;biblioteca=self.biblioteca
         def leer():
-            try:sync=GuardiaSync(self.biblioteca).estado();estado=tr('Al día') if sync.get('state')=='idle' and not sync.get('needFiles') else tr('Sincronizando') if sync.get('disponible') else tr('No configurado')
+            try:sync=GuardiaSync(biblioteca).estado();estado=tr('Al día') if sync.get('state')=='idle' and not sync.get('needFiles') else tr('Sincronizando') if sync.get('disponible') else tr('No configurado')
             except OSError:estado=tr('Sin conexión')
             versiones=sorted({int(j['mayor']) for j in java.detectar()})
-            return tr('Playit: %s\nSyncthing: %s\nJava: %s')%(tr('Activo') if self.control and self.control.playit.vivo else tr('Apagado'),estado,', '.join(map(str,versiones)) or tr('no encontrado'))
+            return tr('Playit: %s\nSyncthing: %s\nJava: %s')%(tr('Activo') if control and control.playit.vivo else tr('Apagado'),estado,', '.join(map(str,versiones)) or tr('no encontrado'))
         self.trabajo(leer,self.sistema_texto.setText)
 
     def actualizar_bloqueos(self):

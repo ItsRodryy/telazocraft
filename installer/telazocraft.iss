@@ -5,7 +5,7 @@
   #define Salida "..\dist"
 #endif
 #ifndef Version
-  #define Version "0.2.1"
+  #define Version "0.3.0"
 #endif
 [Setup]
 AppId=Telazocraft
@@ -24,6 +24,8 @@ SolidCompression=yes
 LZMANumBlockThreads=2
 WizardStyle=modern dark
 SetupIconFile={#Paquete}\Telazocraft.ico
+WizardImageFile={#Paquete}\Wizard.bmp
+WizardSmallImageFile={#Paquete}\WizardSmall.bmp
 UninstallDisplayIcon={app}\Telazocraft.ico
 LicenseFile={#Paquete}\LICENSE
 DisableProgramGroupPage=yes
@@ -38,8 +40,9 @@ Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 Source: "{#Paquete}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "*.pdb,python\Lib\test\*,python\Lib\idlelib\*,python\Lib\tkinter\*,python\tcl\*,python\Lib\site-packages\PySide6\qml\*"
 
 [Icons]
-Name: "{autoprograms}\Telazocraft"; Filename: "{app}\python\pythonw.exe"; Parameters: "-B -m telazocraft"; WorkingDir: "{app}"; IconFilename: "{app}\Telazocraft.ico"
-Name: "{autodesktop}\Telazocraft"; Filename: "{app}\python\pythonw.exe"; Parameters: "-B -m telazocraft"; WorkingDir: "{app}"; IconFilename: "{app}\Telazocraft.ico"
+Name: "{autoprograms}\Telazocraft"; Filename: "{app}\Telazocraft.exe"; WorkingDir: "{app}"; IconFilename: "{app}\Telazocraft.ico"; AppUserModelID: "ItsRodryy.Telazocraft"
+Name: "{autodesktop}\Telazocraft"; Filename: "{app}\Telazocraft.exe"; WorkingDir: "{app}"; IconFilename: "{app}\Telazocraft.ico"; AppUserModelID: "ItsRodryy.Telazocraft"
 
 [Run]
-Filename: "{app}\python\pythonw.exe"; Parameters: "-B -m telazocraft"; WorkingDir: "{app}"; Description: "Abrir Telazocraft"; Flags: nowait postinstall skipifsilent
+Filename: "{sys}\ie4uinit.exe"; Parameters: "-show"; Flags: runhidden
+Filename: "{app}\Telazocraft.exe"; WorkingDir: "{app}"; Description: "Abrir Telazocraft"; Flags: nowait postinstall skipifsilent

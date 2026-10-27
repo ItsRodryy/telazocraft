@@ -37,6 +37,8 @@ def avisar(paneles, gancho, *args):
             except Exception:
                 _LOGGER.exception("Falló el gancho %s de %s", gancho,
                                   type(panel).__name__)
+                ventana=panel.window() if hasattr(panel,'window') else None
+                if hasattr(ventana,'mostrar_error'):ventana.mostrar_error('No se pudo actualizar este panel')
     return llamados
 
 
@@ -51,7 +53,6 @@ def avisar_alguno(paneles, ganchos, *args):
         for gancho in ganchos:
             funcion = getattr(panel, gancho, None)
             if callable(funcion):
-                funcion(*args)
-                llamados += 1
+                llamados += avisar([panel],gancho,*args)
                 break
     return llamados

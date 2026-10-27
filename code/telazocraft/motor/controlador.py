@@ -38,10 +38,22 @@ class Controlador:
     def _estado(self, valor):
         self.estado = valor
         self.emitir("estado", valor)
+        fases={'arrancando':(5,'Preparando Java'),'encendido':(100,'Servidor listo'),'parando':(10,'Guardando mundo'),'apagado':(100,'Servidor apagado')}
+        if valor in fases:self.progreso(*fases[valor])
+
+    def progreso(self, valor, texto):
+        self.emitir('progreso',{'valor':valor,'texto':texto})
 
     def _linea(self, linea):
         self.emitir("log", linea)
         self.rendimiento.linea(linea)
+        if self.estado=='arrancando':
+            for clave,valor,texto in (('ModLauncher',20,'Cargando NeoForge'),('Loading Minecraft',30,'Cargando Minecraft'),('Starting minecraft server',45,'Preparando servidor'),('Preparing level',65,'Abriendo mundo'),('Preparing start region',80,'Preparando terreno')):
+                if clave.lower() in linea.lower():self.progreso(valor,texto)
+        elif self.estado=='parando':
+            if 'Saving players' in linea:self.progreso(35,'Guardando jugadores')
+            if 'Saving worlds' in linea:self.progreso(60,'Guardando dimensiones')
+            if 'All dimensions are saved' in linea:self.progreso(75,'Mundo guardado')
         evento = self.consola.recibir(linea)
         if evento:
             nick = evento["jugador"]
@@ -51,8 +63,8 @@ class Controlador:
                 evento["duracion_seg"] = max(0, time.time() - self.consola.entradas.pop(nick, time.time()))
             elif evento["tipo"] == "muerte":
                 self.hardcore.muerte(nick)
-            self.diario.registrar(**evento)
-            self.emitir("jugadores", {"conectados": sorted(self.consola.jugadores), "evento": evento})
+            registro=self.diario.registrar(**evento)
+            self.emitir("jugadores", {"conectados": sorted(self.consola.jugadores), "evento": registro})
         if "Done (" in linea:
             self.listo.set()
             self._estado("encendido")
@@ -91,7 +103,7 @@ class Controlador:
 
     def copiar(self, nivel):
         self._estado("copiando")
-        destino = copias.crear(self.servidor, nivel, en_sesion=True)
+        destino = copias.crear(self.servidor, nivel, en_sesion=True, progreso=self.progreso)
         self.diario.registrar("copia", nivel=nivel, archivo=destino.name)
         self.emitir("copia", str(destino))
 
@@ -111,11 +123,16 @@ class Controlador:
                 fin_ciclo = inicio + ciclo if ciclo else float("inf")
                 lista = inicio
                 hardware = inicio + 60
+                metricas = inicio
                 avisos = {300, 180, 60, 30, 10}
                 motivo = "sesion"
                 while self.proceso.vivo and not self.fin.wait(0.25):
                     ahora = time.monotonic()
                     if self.listo.is_set():
+                        if ahora >= metricas:
+                            try:self.medir_rendimiento()
+                            except (OSError,RuntimeError,ValueError) as exc:self.emitir('aviso','No se pudo medir el rendimiento: '+str(exc))
+                            metricas=ahora+5
                         self.hardcore.tick()
                         if ahora >= lista:
                             self.proceso.enviar("list")
@@ -146,6 +163,10 @@ class Controlador:
                 caido = not self.proceso.vivo and not self.fin.is_set()
                 self._estado("parando")
                 self.proceso.parar()
+                for nick in list(self.consola.jugadores):
+                    evento={'tipo':'salida','jugador':nick,'duracion_seg':max(0,time.time()-self.consola.entradas.pop(nick,time.time()))}
+                    registro=self.diario.registrar(**evento);self.consola.jugadores.discard(nick)
+                    self.emitir('jugadores',{'conectados':sorted(self.consola.jugadores),'evento':registro})
                 if caido:
                     crashes = crashes + 1 if time.monotonic() - inicio < 600 else 0
                     self.emitir("aviso", "El servidor se cerró inesperadamente")

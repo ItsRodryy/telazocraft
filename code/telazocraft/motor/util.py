@@ -76,7 +76,7 @@ def http_json(url, datos=None, metodo=None, cabeceras=None, timeout=30):
         return json.loads(raw) if raw else None
 
 
-def descargar(url, destino, esperado, algoritmo="sha256"):
+def descargar(url, destino, esperado, algoritmo="sha256", progreso=lambda leidos,total: None):
     if urllib.parse.urlsplit(url).scheme != "https":
         raise ValueError("La descarga debe usar HTTPS")
     destino = Path(destino)
@@ -84,7 +84,9 @@ def descargar(url, destino, esperado, algoritmo="sha256"):
     temporal = destino.with_name(destino.name + ".descarga")
     req = urllib.request.Request(url, headers={"User-Agent": AGENTE})
     with urllib.request.urlopen(req, timeout=60) as r, temporal.open("wb") as f:
-        shutil.copyfileobj(r, f, 1024 * 1024)
+        total=int(getattr(r,'headers',{}).get('Content-Length',0));leidos=0
+        for bloque in iter(lambda:r.read(1024*1024),b''):
+            f.write(bloque);leidos+=len(bloque);progreso(leidos,total)
     if huella(temporal, algoritmo).lower() != esperado.lower():
         archivar(temporal, destino.parent / "descargas_fallidas")
         raise ValueError("La descarga no coincide con su hash")

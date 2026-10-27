@@ -1,5 +1,6 @@
 import re
 import threading
+import logging
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QFormLayout,QLabel,QLineEdit,QStackedWidget,QListWidget,QListWidgetItem,QTableWidgetItem
 from .base import boton,fila,titulo
@@ -20,6 +21,7 @@ class NuevoServidor(DialogoProceso):
     loaders_listos=Signal(object)
     busqueda_lista=Signal(object)
     compatibilidad_lista=Signal(object)
+    fallo_red=Signal(str,str)
 
     def __init__(self,padre,red=True):
         super().__init__(tr('Nuevo servidor'),parent=padre)
@@ -31,25 +33,30 @@ class NuevoServidor(DialogoProceso):
         for n,v in (('NeoForge','neoforge'),('Vanilla','vanilla'),('Copiar otro sin mundo','copia')):self.tipo.addItem(tr(n),v)
         self.plantilla=ComboSinRueda();self.whitelist=ComboSinRueda();self.whitelist.addItem(tr('Vacía'),None)
         for s in padre.biblioteca.servidores():self.plantilla.addItem(s.nombre,s.id);self.whitelist.addItem(s.nombre,s.id)
-        self.version=ComboSinRueda();self.version.setEditable(True);self.version.addItem('26.3')
-        self.loader=ComboSinRueda();self.loader.setEditable(True);self.loader.addItem('26.3.0.99');self.loaders=[];self.nombre=QLineEdit();self.id=QLineEdit()
+        self.version=ComboSinRueda();self.version.addItem(tr('Cargando…'),None)
+        self.loader=ComboSinRueda();self.loader.addItem(tr('Cargando…'),None);self.loaders=[];self.nombre=QLineEdit();self.id=QLineEdit()
+        self.versiones_disponibles=False;self.loaders_disponibles=False
+        self.error_red=QLabel();self.error_red.setWordWrap(True)
+        self.reintentar=boton('Reintentar',self.cargar_versiones);self.reintentar.hide()
         self.nombre.textChanged.connect(lambda t:self.id.setText(re.sub(r'[^a-z0-9_-]','_',t.lower())[:64]))
         self.semilla=QLineEdit();self.semilla.setPlaceholderText(tr('Aleatoria'));self.hardcore=CheckBox(tr('Hardcore'))
-        self.acceso=ComboSinRueda();self.acceso.addItems([tr('abierto'),tr('premium')])
+        self.acceso=ComboSinRueda();self.acceso.addItem(tr('Abierto'),'abierto');self.acceso.addItem(tr('Solo premium'),'premium')
         self.mods=QLineEdit();self.mods.setReadOnly(True);self.mods.setPlaceholderText(tr('Mods seleccionados'))
         self.buscar=QLineEdit();self.buscar.setPlaceholderText(tr('Buscar mods compatibles en Modrinth'));self.resultados=ListaMods();self.hits=[];self.slugs=[]
         self.instalar_java=CheckBox(tr('Instalar Java con winget si falta'));self.eula=CheckBox(tr('Acepto la EULA de Minecraft'));self.eula.setToolTip('https://www.minecraft.net/eula')
-        self.tabla=TablaDatos([tr('Minecraft'),tr('Mods compatibles'),tr('Total')]);self.tabla.setMaximumHeight(120)
+        self.paquete=CheckBox(tr('Crear paquete para amigos al terminar'))
+        self.tabla=TablaDatos([tr('Minecraft'),tr('Mods compatibles'),tr('Total')],columna_estirada=1,anchos={0:140,1:220,2:100});self.tabla.setMaximumHeight(120)
         def pagina(campos,extras=()):
             grupo=style.agrupador();form=QFormLayout(grupo)
             for texto,w in campos:form.addRow(tr(texto),w)
             panel=style.tarjeta(grupo,*extras);self.stack.addWidget(panel)
-        pagina((('Tipo',self.tipo),('Minecraft',self.version),('NeoForge',self.loader),('Copiar desde',self.plantilla)))
-        pagina((),(fila(self.buscar,boton('Buscar',self.buscar_mods)),self.resultados,boton('Añadir seleccionado',self.elegir_mod),self.mods,boton('Comparar compatibilidad',self.comparar),self.tabla))
+        pagina((('Tipo',self.tipo),('Minecraft',self.version),('NeoForge',self.loader),('Copiar desde',self.plantilla)),(self.error_red,self.reintentar))
+        self.ayuda_mods=QLabel();self.error_busqueda=QLabel()
+        pagina((),(self.buscar,self.ayuda_mods,self.error_busqueda,self.resultados,boton('Añadir seleccionado',self.elegir_mod),self.mods,boton('Comparar compatibilidad',self.comparar),self.tabla))
         pagina((('Nombre',self.nombre),('Identificador',self.id),('Semilla',self.semilla)),(self.hardcore,))
         pagina((('Acceso',self.acceso),('Whitelist inicial',self.whitelist)),(QLabel(tr('Abierto admite jugadores offline y premium; solo premium verifica la cuenta.')),))
         self.resumen=QLabel();self.resumen.setWordWrap(True)
-        pagina((),(self.resumen,self.instalar_java,self.eula))
+        pagina((),(self.resumen,self.instalar_java,self.eula,self.paquete))
         self.atras=boton('Atrás',lambda:self.mover(-1));self.siguiente=boton('Siguiente',lambda:self.mover(1),True);self.cancelar=boton('Cancelar',self.reject)
         self.layout().addWidget(fila(self.atras,self.cancelar,self.siguiente))
         self.btn_detalle.hide();self.btn_cerrar.hide();self.barra.hide();self.estado.hide();self.mensaje.hide()
@@ -57,37 +64,66 @@ class NuevoServidor(DialogoProceso):
         self.versiones_listas.connect(self.pintar_versiones);self.busqueda_lista.connect(self.pintar_busqueda);self.compatibilidad_lista.connect(self.pintar_comparacion)
         self.actualizar_tipo();self.mostrar_paso()
         self.loaders_listos.connect(self.pintar_loaders)
+        self.fallo_red.connect(self.mostrar_fallo_red)
         self.version.currentTextChanged.connect(self.filtrar_loaders)
-        if red:
-            self.lanzar(vanilla.versiones,self.versiones_listas)
-            self.lanzar(neoforge.versiones,self.loaders_listos)
+        from .busqueda_mods import BusquedaMods
+        self.buscador=BusquedaMods(self,self.simulado);self.buscador.listo.connect(self.pintar_busqueda);self.buscador.estado.connect(self.error_busqueda.setText);self.buscar.textChanged.connect(self.buscador.cambiar)
+        if red:self.cargar_versiones()
+        else:
+            self.pintar_versiones([{'id':'26.3','type':'release'}]);self.pintar_loaders(['26.3.0.99'])
 
-    def lanzar(self,fn,signal):
+    def cargar_versiones(self):
+        self.error_red.clear();self.reintentar.hide()
+        self.lanzar(vanilla.versiones,self.versiones_listas,'versiones')
+        self.lanzar(neoforge.versiones,self.loaders_listos,'loaders')
+
+    def mostrar_fallo_red(self,origen,error):
+        self.error_red.setText(tr('No se pudieron cargar %s: %s')%(origen,error));self.reintentar.show()
+        if origen=='versiones' and not self.versiones_disponibles:self.version.clear();self.version.addItem(tr('Sin versiones disponibles'),None)
+        if origen=='loaders' and not self.loaders_disponibles:self.loader.clear();self.loader.addItem(tr('Sin versiones disponibles'),None)
+        self.actualizar_tipo()
+
+    def lanzar(self,fn,signal,origen='datos'):
         def hacer():
             try:signal.emit(fn())
-            except Exception as e:self.progreso.emit(tr('Sin red: %s')%e)
+            except Exception as e:
+                logging.getLogger(__name__).exception('Falló la carga de %s',origen)
+                try:self.fallo_red.emit(origen,str(e))
+                except RuntimeError:pass
         threading.Thread(target=hacer,daemon=True).start()
 
     def pintar_loaders(self,datos):
-        self.loaders=datos;self.filtrar_loaders()
+        self.loaders=datos;self.loaders_disponibles=bool(datos);self.filtrar_loaders();self.actualizar_tipo()
 
     def filtrar_loaders(self,*_):
         if not self.loaders:return
         version=self.version.currentText();partes=version.split('.')
         prefijo='.'.join(partes[1:] if partes[0]=='1' else partes)+'.'
-        opciones=[v for v in self.loaders if v.startswith(prefijo)]
-        anterior=self.loader.currentText();self.loader.clear();self.loader.addItems(list(reversed(opciones)))
-        if anterior in opciones:self.loader.setCurrentText(anterior)
+        opciones=sorted([v for v in self.loaders if v.startswith(prefijo)],key=lambda v:tuple(map(int,re.findall(r'\d+',v))),reverse=True)
+        estables=[v for v in opciones if not any(t in v for t in ('beta','alpha','snapshot'))]
+        self.loader.clear()
+        for v in estables or opciones:self.loader.addItem(v,v)
+        if not opciones:self.loader.addItem(tr('Sin NeoForge para esta versión'),None)
+        if hasattr(self,'ayuda_mods'):self.ayuda_mods.setText(tr('Resultados de Modrinth para %s %s')%(version,self.tipo.currentText()))
 
     def pintar_versiones(self,datos):
-        actual=self.version.currentText();self.version.clear();self.version.addItems([v['id'] for v in datos if v['type']=='release']);self.version.setCurrentText(actual)
+        actual=self.version.currentData();self.version.blockSignals(True);self.version.clear()
+        for v in datos:
+            if v['type']=='release':self.version.addItem(v['id'],v['id'])
+        self.versiones_disponibles=bool(self.version.count())
+        if actual and self.version.findData(actual)>=0:self.version.setCurrentIndex(self.version.findData(actual))
+        self.version.blockSignals(False);self.filtrar_loaders();self.actualizar_tipo()
 
     def actualizar_tipo(self):
-        copia=self.tipo.currentData()=='copia';self.plantilla.setEnabled(copia);self.loader.setEnabled(self.tipo.currentData()=='neoforge');self.version.setEnabled(not copia)
+        copia=self.tipo.currentData()=='copia';self.plantilla.setEnabled(copia);self.loader.setEnabled(self.tipo.currentData()=='neoforge' and self.loaders_disponibles);self.version.setEnabled(not copia and self.versiones_disponibles)
         self.buscar.setEnabled(self.tipo.currentData()!='vanilla')
         if copia and self.plantilla.currentData():
             s=self.parent().biblioteca.servidor(self.plantilla.currentData())
-            self.version.setCurrentText(s.datos['version_mc']);self.loader.setCurrentText(s.datos.get('version_loader',''))
+            if self.version.findData(s.datos['version_mc'])<0:self.version.addItem(s.datos['version_mc'],s.datos['version_mc'])
+            self.version.setCurrentIndex(self.version.findData(s.datos['version_mc']))
+            loader=s.datos.get('version_loader','')
+            if self.loader.findData(loader)<0:self.loader.addItem(loader,loader)
+            self.loader.setCurrentIndex(self.loader.findData(loader))
 
     def mostrar_paso(self):
         nombres=('Tipo y versión','Mods','Mundo','Jugadores y acceso','Resumen')
@@ -98,7 +134,8 @@ class NuevoServidor(DialogoProceso):
 
     def mover(self,delta):
         if self.en_curso:return
-        if delta>0 and self.indice==0 and (not self.version.currentText().strip() or self.tipo.currentData()=='copia' and not self.plantilla.currentData()):return
+        if delta>0 and self.indice==0 and (not self.version.currentData() or self.tipo.currentData()=='neoforge' and not self.loader.currentData() or self.tipo.currentData()=='copia' and not self.plantilla.currentData()):
+            self.error_red.setText(tr('Espera a que se carguen las versiones o pulsa Reintentar'));return
         if delta>0 and self.indice==2 and (not self.nombre.text().strip() or not re.fullmatch(r'[a-z0-9][a-z0-9_-]{0,63}',self.id.text())):
             self.estado.show();self.estado.setText(tr('Escribe un nombre y un identificador válido'));return
         if delta>0 and self.indice==4:self.crear();return
@@ -138,7 +175,7 @@ class NuevoServidor(DialogoProceso):
         copia=self.tipo.currentData()=='copia';s=self.parent().biblioteca.servidor(self.plantilla.currentData()) if copia and self.plantilla.currentData() else None
         return {'id':self.id.text(),'nombre':self.nombre.text(),'tipo':s.datos['tipo'] if s else self.tipo.currentData(),
                 'version_mc':s.datos['version_mc'] if s else self.version.currentText().strip(),'version_loader':s.datos.get('version_loader','') if s else self.loader.currentText().strip(),
-                'plantilla':self.plantilla.currentData() if copia else None,'hardcore':self.hardcore.isChecked(),'acceso':self.acceso.currentText(),
+                'plantilla':self.plantilla.currentData() if copia else None,'hardcore':self.hardcore.isChecked(),'acceso':self.acceso.currentData(),
                 'whitelist_de':self.whitelist.currentData(),'mods':list(self.slugs),'semilla':self.semilla.text(),'instalar_java':self.instalar_java.isChecked()}
 
     def crear(self):
@@ -146,9 +183,18 @@ class NuevoServidor(DialogoProceso):
         datos=self.datos();self.en_curso=True;self.terminado=False;self.stack.hide();self.atras.hide();self.siguiente.hide();self.cancelar.hide()
         self.barra.show();self.estado.show();self.btn_detalle.show();self.btn_cerrar.show();self.mensaje.show();self.titulo_paso.setText(tr('Creando servidor'))
         biblioteca=self.parent().biblioteca
+        paquete=self.paquete.isChecked()
         def hacer():
-            try:self.resultado.emit(asistente.crear(biblioteca,**datos,progreso=self.progreso.emit),None)
-            except Exception as e:self.resultado.emit(None,str(e))
+            s=None
+            try:
+                s=asistente.crear(biblioteca,**datos,progreso=self.progreso.emit)
+                if paquete:
+                    from ..motor import exportaciones
+                    exportaciones.crear(s,progreso=lambda n,t:self.progreso.emit('@@PROGRESO %s %s'%(n,t)))
+                self.resultado.emit(s,None)
+            except Exception as e:
+                logging.getLogger(__name__).exception('No se pudo completar el asistente')
+                self.resultado.emit(s,str(e))
         self.hilo=threading.Thread(target=hacer,daemon=False);self.hilo.start()
 
     def finalizar(self,s,error):

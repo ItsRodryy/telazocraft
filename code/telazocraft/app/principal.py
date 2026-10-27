@@ -1,12 +1,14 @@
 import json
 import os
 import threading
+import logging
+import time
 from pathlib import Path
 from PySide6.QtCore import Qt, QEvent, QTimer, QLockFile, QFileSystemWatcher, QSize
 from PySide6.QtGui import QAction, QGuiApplication, QIcon
 from PySide6.QtWidgets import (QApplication, QFileDialog, QLabel, QLineEdit, QListWidget, QMainWindow,
                                QMenu, QScrollArea, QSplitter, QStackedWidget, QSystemTrayIcon,
-                               QVBoxLayout, QHBoxLayout, QWidget, QListWidgetItem)
+                               QVBoxLayout, QHBoxLayout, QWidget, QListWidgetItem, QProgressBar)
 from . import style, icons
 from .base import Bus, Comando, Log, boton, fila, titulo, confirmar
 from .qt_app import crear_app
@@ -45,7 +47,7 @@ class AvisoTemporal(QLabel):
         else:self._timer.stop()
 
 class MainWindow(PantallasMods, PantallasGestion, PantallaAsistente, QMainWindow):
-    VISTAS = ("Inicio", "Jugadores", "Mods", "Copias", "Ajustes", "Telazocraft")
+    VISTAS = ("Inicio", "Jugadores", "Mods", "Copias", "Ajustes")
 
     def __init__(self, biblioteca, persistir=True):
         super().__init__()
@@ -53,10 +55,12 @@ class MainWindow(PantallasMods, PantallasGestion, PantallaAsistente, QMainWindow
         self.prefs = ajustes.cargar() if persistir else {}
         self.controles, self.paginas = {}, {}
         self.trabajos = 0
+        self.resumenes={};self.resumen_cargando=set();self.resumen_pendiente=set();self.logs_importados=set();self.lectores=[]
         self._salir = False
         self.bus = Bus(self)
         self.bus.evento.connect(self.evento)
         self.bus.resultado.connect(self._resultado)
+        self.bus.resumen.connect(self.recibir_resumen)
         self.setWindowTitle(tr("Telazocraft"))
         self.setWindowIcon(icons.app_icon())
         self.setMinimumSize(900, 600)
@@ -85,7 +89,7 @@ class MainWindow(PantallasMods, PantallasGestion, PantallaAsistente, QMainWindow
         for nombre in self.VISTAS[:5]:
             item = QListWidgetItem(icons.glifo(nombre.lower(),22), tr(nombre)); item.setToolTip(tr(nombre)); item.setSizeHint(QSize(140,48)); self.nav.addItem(item)
         self.nav.currentRowChanged.connect(self.cambiar_vista)
-        self.gear = boton("Telazocraft", lambda: self.cambiar_vista(5)); self.gear.setIcon(icons.glifo("engranaje",22)); self.gear.setToolTip(tr("Telazocraft"))
+        self.gear = boton("Telazocraft", self.abrir_sistema); self.gear.setIcon(icons.glifo("engranaje",22)); self.gear.setToolTip(tr("Telazocraft"))
         self.lateral = style.tarjeta(self.nav, self.gear)
         self.stack = QStackedWidget(); self.stack.setObjectName("stack")
         h.addWidget(self.lateral); h.addWidget(self.stack,1)
@@ -98,13 +102,17 @@ class MainWindow(PantallasMods, PantallasGestion, PantallaAsistente, QMainWindow
         self.splitter.splitterMoved.connect(self.recordar_altura_consola)
         caja.addWidget(self.splitter,1)
         self.aviso=AvisoTemporal();caja.addWidget(self.aviso)
+        self.progreso_operacion=QProgressBar();self.progreso_operacion.hide();caja.addWidget(self.progreso_operacion)
+        self.ocultar_progreso=QTimer(self);self.ocultar_progreso.setSingleShot(True);self.ocultar_progreso.timeout.connect(self.progreso_operacion.hide)
         self.construir_gestion(); self.construir_mods(); self.construir_sistema(); self.crear_bandeja()
         self.watcher = QFileSystemWatcher(self)
         self.debounce = QTimer(self); self.debounce.setSingleShot(True); self.debounce.setInterval(350); self.debounce.timeout.connect(self.refrescar)
-        self.watcher.directoryChanged.connect(lambda _: self.debounce.start())
-        self.watcher.fileChanged.connect(lambda _: self.debounce.start())
+        self.watcher.directoryChanged.connect(self.cambio_archivo)
+        self.watcher.fileChanged.connect(self.cambio_archivo)
         self.timer_estado=QTimer(self);self.timer_estado.setInterval(1000);self.timer_estado.timeout.connect(self.actualizar_estado);self.timer_estado.start()
         self.recargar_servidores();self.nav.setCurrentRow(0);self.ajustar_lateral()
+        from .interaction import aplicar_cursores_interactivos
+        aplicar_cursores_interactivos(self)
         QApplication.instance().commitDataRequest.connect(self.apagado_windows)
 
     @property
@@ -128,7 +136,7 @@ class MainWindow(PantallasMods, PantallasGestion, PantallaAsistente, QMainWindow
         paths=[str(self.biblioteca.raiz/'servidores')]
         if self.servidor:
             s=self.servidor
-            paths += [str(s.ruta),str(s.ruta/'mods'),str(s.ruta/'logs'),str(s.ruta/'sesiones.jsonl')]
+            paths += [str(s.ruta),str(s.ruta/'mods'),str(s.ruta/'sesiones.jsonl')]
             carpeta=self.biblioteca.ruta('copias',s.id)
             if carpeta.exists():paths += [str(carpeta)]+[str(p) for p in carpeta.iterdir() if p.is_dir()]
         actuales=self.watcher.directories()+self.watcher.files()
@@ -144,7 +152,6 @@ class MainWindow(PantallasMods, PantallasGestion, PantallaAsistente, QMainWindow
         self.mods_updates={};self.mods_datos=[]
         if self.servidor:
             self.prefs['ultimo_servidor']=self.servidor.id
-            importar(self.servidor)
         self.refrescar()
 
     def refrescar(self):
@@ -153,7 +160,64 @@ class MainWindow(PantallasMods, PantallasGestion, PantallaAsistente, QMainWindow
         ids=[s.id for s in self.biblioteca.servidores()]
         if ids != [self.selector.itemData(i) for i in range(self.selector.count())]:
             self.recargar_servidores();return
-        self.cargar_ajustes();self.actualizar_jugadores();self.actualizar_diario();self.actualizar_copias();self.actualizar_mods();self.actualizar_inicio();self.vigilar();self.actualizar_estado()
+        self.pintar_visible();self.vigilar();self.actualizar_estado();self.pedir_resumen()
+
+    def cambio_archivo(self,*_):
+        self.debounce.start()
+
+    def pedir_resumen(self):
+        from .resumen import leer
+        s=self.servidor
+        if not s:return
+        if s.id in self.resumen_cargando:self.resumen_pendiente.add(s.id);return
+        id=s.id;cache=self.cache_mods(s);anterior=self.resumenes.get(id)
+        clave=str(s.biblioteca.raiz)+'|'+id
+        importar_logs=id not in self.logs_importados
+        self.resumen_cargando.add(id)
+        def hacer():
+            try:self.bus.resumen.emit(clave,leer(s,cache,anterior,importar_logs),None)
+            except Exception as exc:
+                logging.getLogger(__name__).exception('No se pudo leer el resumen')
+                try:self.bus.resumen.emit(clave,None,str(exc))
+                except RuntimeError:pass
+        hilo=threading.Thread(target=hacer,daemon=True);self.lectores=[h for h in self.lectores if h.is_alive()];self.lectores.append(hilo);hilo.start()
+
+    def recibir_resumen(self,clave,datos,error):
+        origen,id=clave.rsplit('|',1)
+        if origen!=str(self.biblioteca.raiz):return
+        self.resumen_cargando.discard(id)
+        if error:self.mostrar_error(error);return
+        self.resumenes[id]=datos;self.logs_importados.add(id)
+        if id==self.selector.currentData():self.pintar_visible();self.vigilar()
+        if id in self.resumen_pendiente:
+            self.resumen_pendiente.discard(id)
+            if id==self.selector.currentData():self.pedir_resumen()
+
+    def pintar_visible(self):
+        s=self.servidor
+        if not s:return
+        datos=self.resumenes.get(s.id,{})
+        self.mods_datos=datos.get('mods',[]);self.copias_datos=datos.get('copias',[])
+        self.datos_jugadores=self.jugadores_actuales()
+        indice=self.stack.currentIndex()
+        if indice==0:self.actualizar_inicio()
+        elif indice==1:self.actualizar_jugadores();self.actualizar_diario()
+        elif indice==2:self.actualizar_mods()
+        elif indice==3:self.actualizar_copias()
+        elif indice==4:self.cargar_ajustes()
+
+    def registros(self):
+        return self.resumenes.get(self.selector.currentData(),{}).get('diario',[])
+
+    def jugadores_actuales(self):
+        from ..motor.tiempos import sesiones_jugadores
+        c=self.control;conectados=c.consola.jugadores if c else ()
+        horas,_=sesiones_jugadores(self.registros(),conectados,c.consola.entradas if c else {})
+        datos=[dict(j) for j in self.resumenes.get(self.selector.currentData(),{}).get('jugadores',[])]
+        for nick in conectados:
+            if not any(j['nick'].casefold()==nick.casefold() for j in datos):datos.append({'nick':nick,'uuid':'','ultima':'','horas':0})
+        for j in datos:j['horas']=horas.get(j['nick'].casefold(),0);j['conectado']=j['nick'].casefold() in {n.casefold() for n in conectados}
+        return sorted(datos,key=lambda j:(not j['conectado'],j['nick'].casefold()))
 
     def actualizar_estado(self):
         if not hasattr(self,'bandeja'):return
@@ -165,21 +229,25 @@ class MainWindow(PantallasMods, PantallasGestion, PantallaAsistente, QMainWindow
         self.iniciar_boton.setToolTip(tr("Detén el servidor activo antes de iniciar otro") if vivo else tr("Iniciar el servidor elegido"))
         self.parar_boton.setEnabled(bool(c and c.hilo and c.hilo.is_alive()))
         self.reiniciar_boton.setEnabled(bool(c and c.estado=='encendido'))
-        self.bandeja.setIcon(icons.app_icon(estado));n=c.consola.lista_numero if c else 0
+        if estado!=getattr(self,'ultimo_icono',None):self.bandeja.setIcon(icons.app_icon(estado));self.ultimo_icono=estado
+        n=c.consola.lista_numero if c else 0
         self.bandeja.setToolTip(tr("Telazocraft · %s · %s jugadores")%(estado,n));self.accion_estado.setText(tr("%s · %s jugadores")%(estado,n))
         activo=bool(c and c.estado=='encendido' and self.stack.currentWidget() is self.paginas['Inicio'] and self.isVisible())
         if activo and not self.timer_metricas.isActive():self.timer_metricas.start()
         elif not activo:self.timer_metricas.stop()
         self.graficas_panel.setVisible(bool(c and c.estado=='encendido'))
-        for i in range(self.selector.count()):
-            co=self.controles.get(self.selector.itemData(i));est=co.estado if co else 'apagado'
-            self.selector.setItemIcon(i,icons.estado_icon(est))
+        estados=tuple((self.selector.itemData(i),self.controles[self.selector.itemData(i)].estado if self.selector.itemData(i) in self.controles else 'apagado') for i in range(self.selector.count()))
+        if estados!=getattr(self,'ultimos_estados',None):
+            for i,(_,est) in enumerate(estados):self.selector.setItemIcon(i,icons.estado_icon(est))
+            self.ultimos_estados=estados
         self.actualizar_bloqueos()
+        if c and c.estado=='encendido' and self.isVisible() and int(time.time())//60!=getattr(self,'minuto_vivo',None):
+            self.minuto_vivo=int(time.time())//60;self.pintar_visible()
 
     def cambiar_vista(self,indice):
         if indice<0:return
         self.stack.setCurrentIndex(indice)
-        if indice==5:self.nav.blockSignals(True);self.nav.setCurrentRow(-1);self.nav.blockSignals(False);self.refrescar_sistema()
+        self.pintar_visible()
         if indice==2:self.enriquecer_mods()
         if indice==1:self.cargar_cabezas_automaticas()
         self.actualizar_estado()
@@ -219,8 +287,16 @@ class MainWindow(PantallasMods, PantallasGestion, PantallaAsistente, QMainWindow
         elif tipo=='copia':self.aviso.setText(tr('Copia creada: %s')%Path(dato).name)
         elif tipo=='jugadores':
             evento=dato['evento']
+            if id in self.resumenes and evento.get('fecha'):
+                self.resumenes[id]['diario'].append(evento)
+            if id==self.selector.currentData():self.pintar_visible()
             if evento['tipo'] in ('entrada','salida'):self.notificar(tr('Jugadores'),tr('%s: %s')%(evento['jugador'],evento['tipo']))
-        if tipo!='log':self.debounce.start();self.actualizar_estado()
+        elif tipo=='progreso' and id==self.selector.currentData():
+            self.ocultar_progreso.stop()
+            self.progreso_operacion.show();self.progreso_operacion.setRange(0,100)
+            self.progreso_operacion.setValue(dato['valor']);self.progreso_operacion.setFormat(str(dato.get('texto',''))+' · %p%')
+            if dato['valor']>=100:self.ocultar_progreso.start(1500)
+        if tipo not in ('log','progreso'):self.debounce.start();self.actualizar_estado()
 
     def construir_consola(self):
         self.log=Log();self.mini_log=self.log
@@ -253,7 +329,10 @@ class MainWindow(PantallasMods, PantallasGestion, PantallaAsistente, QMainWindow
             ajustes.guardar(self.prefs)
 
     def closeEvent(self,e):
-        if self._salir:self.bandeja.hide();self.timer_estado.stop();self.timer_metricas.stop();e.accept()
+        if self._salir:
+            self.bandeja.hide();self.timer_estado.stop();self.timer_metricas.stop();self.debounce.stop()
+            for hilo in self.lectores:hilo.join(5)
+            e.accept()
         elif self.bandeja.isVisible():self.hide();e.ignore();self.guardar_ventana()
         else:e.ignore();self.salir()
 
@@ -267,15 +346,19 @@ class MainWindow(PantallasMods, PantallasGestion, PantallaAsistente, QMainWindow
         self.trabajos += 1
         self.selector.setEnabled(False)
         self.aviso.setText(tr("Trabajando…"))
+        self.progreso_operacion.setRange(0,0);self.progreso_operacion.show()
         def ejecutar():
             try:
                 self.bus.resultado.emit(final, funcion(), None)
             except Exception as exc:
+                logging.getLogger(__name__).exception('Falló la operación')
                 self.bus.resultado.emit(final, None, str(exc))
         threading.Thread(target=ejecutar, daemon=False).start()
 
     def _resultado(self, final, resultado, error):
         self.trabajos -= 1
+        self.progreso_operacion.setRange(0,100);self.progreso_operacion.setValue(100 if not error else 0)
+        self.ocultar_progreso.start(1500)
         self.selector.setEnabled(not self.trabajos)
         if error:
             self.mostrar_error(error)
@@ -288,6 +371,7 @@ class MainWindow(PantallasMods, PantallasGestion, PantallaAsistente, QMainWindow
         self.actualizar_estado()
 
     def mostrar_error(self, texto):
+        logging.getLogger(__name__).error('%s',texto)
         self.aviso.setText(tr("Error: %s") % texto)
         self.notificar(tr("Error"), texto)
 
@@ -335,9 +419,10 @@ class MainWindow(PantallasMods, PantallasGestion, PantallaAsistente, QMainWindow
         if not confirmar(self, "Se descargará el instalador verificado y se cerrará Telazocraft después de guardar el servidor.", "Actualizar Telazocraft"):
             return
         datos = dict(self.actualizacion)
+        servidor_id=self.selector.currentData() or ''
         activos = [c for c in self.controles.values() if c.hilo and c.hilo.is_alive()]
         def preparar():
-            instalador = actualizador.preparar(datos)
+            instalador = actualizador.preparar(datos,lambda n,total:self.bus.evento.emit(servidor_id,'progreso',{'valor':int(100*n/total) if total else 0,'texto':tr('Descargando actualización')}))
             for c in activos:
                 c.parar(esperar=True)
             if any(c.proceso.vivo for c in activos):
@@ -358,7 +443,7 @@ class MainWindow(PantallasMods, PantallasGestion, PantallaAsistente, QMainWindow
         self.accion_estado.setEnabled(False)
         menu.addSeparator()
         for texto, accion in (("Abrir Telazocraft", self.mostrar), ("Iniciar", self.iniciar), ("Parar", self.parar),
-                              ("Copiar dirección", self.copiar_direccion), ("Abrir exportaciones", self.abrir_exportaciones), ("Salir", self.salir)):
+                              ("Copiar dirección", self.copiar_direccion), ("Paquete para amigos", self.zip_amigos), ("Abrir exportaciones", self.abrir_exportaciones), ("Salir", self.salir)):
             a = menu.addAction(tr(texto))
             a.triggered.connect(accion)
         self.bandeja.setContextMenu(menu)
@@ -371,6 +456,16 @@ class MainWindow(PantallasMods, PantallasGestion, PantallaAsistente, QMainWindow
             ruta = self.biblioteca.ruta("exportaciones", self.servidor.id)
             ruta.mkdir(exist_ok=True)
             abrir_carpeta(str(ruta))
+
+    def ofrecer_prueba(self):
+        if self.biblioteca.servidores():return
+        if not confirmar(self,tr('¿Crear Servidor de prueba con la última versión estable de Minecraft vanilla? Se descargará ahora, sin mods. Al continuar aceptas la EULA: https://www.minecraft.net/eula'),'Crear servidor de prueba'):return
+        from ..motor import asistente,vanilla
+        biblioteca=self.biblioteca
+        def crear():
+            version=next(v['id'] for v in vanilla.versiones() if v['type']=='release')
+            return asistente.crear(biblioteca,id='prueba',nombre='Servidor de prueba',tipo='vanilla',version_mc=version,progreso=lambda t:self.bus.evento.emit('prueba','aviso',t))
+        self.trabajo(crear,lambda _:self.recargar_servidores())
 
     def showEvent(self, e):
         super().showEvent(e)
@@ -432,6 +527,7 @@ class MainWindow(PantallasMods, PantallasGestion, PantallaAsistente, QMainWindow
                 try:
                     c.parar(esperar=True)
                 except Exception:
+                    logging.getLogger(__name__).exception('No se pudo guardar al apagar Windows')
                     manager.cancel()
                     return
         self.guardar_ventana()
@@ -439,11 +535,13 @@ class MainWindow(PantallasMods, PantallasGestion, PantallaAsistente, QMainWindow
 
 def ejecutar(ruta=None, smoke=False):
     app = crear_app()
+    nueva=False
     if not ruta:
         ruta = QFileDialog.getExistingDirectory(None, tr("Elige una biblioteca o una carpeta vacía para crearla"))
         if not ruta:
             return 0
         if not (Path(ruta) / "telazocraft.json").exists():
+            nueva=not any(Path(ruta).iterdir())
             if not confirmar(None, "Se creará una biblioteca de Telazocraft en la carpeta elegida.", "Crear biblioteca"):
                 return 0
             Biblioteca(ruta, crear=True)
@@ -455,6 +553,7 @@ def ejecutar(ruta=None, smoke=False):
         return 0
     ventana = MainWindow(biblioteca, persistir=not smoke)
     ventana.show()
+    if nueva and not smoke:ventana.ofrecer_prueba()
     if smoke:
         def cerrar():
             ventana._salir = True

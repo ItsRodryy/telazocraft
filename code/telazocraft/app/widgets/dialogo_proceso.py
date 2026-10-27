@@ -66,6 +66,11 @@ class VentanaBase(ConFundido, QDialog):
         self.setWindowIcon(icons.app_icon())
         self.setMinimumWidth(560)
 
+    def showEvent(self, evento):
+        from ..interaction import aplicar_cursores_interactivos
+        aplicar_cursores_interactivos(self)
+        super().showEvent(evento)
+
 
 
 def leer_marca_pasos(linea):
@@ -216,6 +221,9 @@ class DialogoProceso(VentanaBase):
     def anadir_linea(self, texto):
         """Una línea del proceso: al detalle, y si anuncia un paso, también a la lista y la barra."""
         linea = str(texto or "")
+        if linea.startswith('@@PROGRESO '):
+            _,valor,rotulo=linea.split(' ',2)
+            self.barra.setRange(0,100);self.barra.setValue(max(0,min(100,int(valor))));self.estado.setText(rotulo);return
         if linea == "@@INSTALANDO":
             # Cancelar un instalador en marcha puede dejar el SDK a medias.
             self.btn_cancelar.setEnabled(False)

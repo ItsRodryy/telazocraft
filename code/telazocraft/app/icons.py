@@ -534,27 +534,38 @@ def glifo(nombre, size=16, color=None, angulo=0.0):
 
 
 def logo_pixmap(size=128, con_fondo=True, estado=None):
+    from .logo_paths import TRAZADOS, VARIANTE_LOGO
     pm = QPixmap(size, size)
     pm.fill(Qt.transparent)
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing)
-    p.scale(size / 128, size / 128)
+    p.scale(size, size)
     t = style.tema_actual()
     if con_fondo:
         p.setPen(Qt.NoPen)
         p.setBrush(QColor(t.superficie_opaca))
-        p.drawRoundedRect(QRectF(0, 0, 128, 128), 24, 24)
-    grad = QLinearGradient(QPointF(64, 26), QPointF(64, 100))
+        p.drawRoundedRect(QRectF(.05, .05, .9, .9), .22, .22)
+    grad = QLinearGradient(QPointF(.5, .19), QPointF(.5, .81))
     grad.setColorAt(0, QColor(t.acento_claro))
     grad.setColorAt(1, QColor(t.acento))
-    p.setPen(QPen(QBrush(grad), 19, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-    p.drawLine(QPointF(30, 32), QPointF(98, 32))
-    p.drawLine(QPointF(64, 33), QPointF(64, 99))
+    path = QPainterPath()
+    puntos = TRAZADOS[VARIANTE_LOGO]; i = 0
+    while i < len(puntos):
+        tipo, x, y = puntos[i]
+        if tipo == 0: path.moveTo(x, y)
+        elif tipo == 1: path.lineTo(x, y)
+        elif tipo == 2:
+            _, x2, y2 = puntos[i+1]; _, x3, y3 = puntos[i+2]
+            path.cubicTo(x, y, x2, y2, x3, y3); i += 2
+        i += 1
+    p.setBrush(QBrush(grad))
+    p.setPen(QPen(QBrush(grad), .035, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+    p.drawPath(path)
     if estado:
         color = t.ok if estado == "encendido" else t.peligro if estado == "error" else t.texto_tenue if estado == "apagado" else t.aviso
         p.setBrush(QColor(color))
         p.setPen(Qt.NoPen)
-        p.drawEllipse(QRectF(91, 91, 28, 28))
+        p.drawEllipse(QRectF(.71, .71, .22, .22))
     p.end()
     return pm
 
