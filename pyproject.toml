@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "telazocraft"
-version = "0.3.0"
+version = "0.3.1"
 description = "Gestor de bibliotecas de servidores de Minecraft"
 authors = [{name = "Adrián Rodríguez Rodríguez"}]
 requires-python = ">=3.11"

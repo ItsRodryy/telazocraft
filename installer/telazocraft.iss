@@ -5,7 +5,7 @@
   #define Salida "..\dist"
 #endif
 #ifndef Version
-  #define Version "0.3.0"
+  #define Version "0.3.1"
 #endif
 [Setup]
 AppId=Telazocraft

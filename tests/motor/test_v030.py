@@ -88,7 +88,7 @@ class Version030Tests(unittest.TestCase):
         with zipfile.ZipFile(p) as z:z.extractall(extraido)
         appdata=self.b.raiz/'appdata falso';juego=appdata/'.minecraft';(juego/'mods').mkdir(parents=True)
         (juego/'mods/anterior.jar').write_bytes(b'anterior');(juego/'saves').mkdir();(juego/'saves/mundo').write_bytes(b'mundo')
-        env={**os.environ,'APPDATA':str(appdata),'TELAZOCRAFT_SIN_PAUSA':'1'}
+        env={**os.environ,'APPDATA':str(appdata),'TELAZOCRAFT_SIN_PAUSA':'1','PSModulePath':str(self.b.raiz/'sin modulos')}
         r=subprocess.run(['cmd.exe','/d','/c',str(extraido/'Instalar.bat')],cwd=extraido,env=env,capture_output=True,timeout=30)
         self.assertEqual(r.returncode,0,r.stdout.decode(errors='replace'))
         self.assertEqual((juego/'mods/nuevo.jar').read_bytes(),b'mod nuevo')

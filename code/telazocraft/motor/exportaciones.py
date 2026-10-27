@@ -9,8 +9,10 @@ from pathlib import Path
 from . import modrinth,neoforge
 from .util import descargar,archivar,huella,leer_json
 
-BAT = '''@echo off
+BAT = r'''@echo off
+setlocal
 chcp 65001 >nul
+set "PSModulePath=%SystemRoot%\System32\WindowsPowerShell\v1.0\Modules;%ProgramFiles%\WindowsPowerShell\Modules"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Instalar.ps1" %*
 set "resultado=%errorlevel%"
 if not defined TELAZOCRAFT_SIN_PAUSA pause

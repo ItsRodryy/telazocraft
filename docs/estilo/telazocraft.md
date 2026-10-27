@@ -1,4 +1,4 @@
-# Telazocraft 0.3.0
+# Telazocraft 0.3.1
 
 Tema oscuro gris. T rellena de Arial Rounded MT Bold con contorno vectorial incorporado, trazo
 suavizado y degradado del acento; mismo dibujo en ventana, bandeja, ejecutable, ICO multirresolución

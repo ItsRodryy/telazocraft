@@ -1,4 +1,4 @@
-# Telazocraft 0.3.0
+# Telazocraft 0.3.1
 
 Gestor de bibliotecas de servidores Minecraft para Windows. Autor: Adrián Rodríguez Rodríguez.
 Licencia MIT. La aplicación y sus datos se guardan por separado: este proyecto nunca contiene
@@ -90,7 +90,7 @@ un servidor de producción. El log de la app vive en `%LOCALAPPDATA%/Telazocraft
 
 ## Instalador y Releases
 
-`python tools/empaquetar.py --iscc RUTA_A_ISCC --repositorio ItsRodryy/telazocraft` fabrica `dist/Telazocraft-0.3.0-windows.exe` y
+`python tools/empaquetar.py --iscc RUTA_A_ISCC --repositorio ItsRodryy/telazocraft` fabrica `dist/Telazocraft-0.3.1-windows.exe` y
 `SHA256SUMS`. Requiere Inno Setup 6.7 o posterior. Usa CPython 3.12.15 de python-build-standalone,
 verificado con el SHA-256 de la publicación 20261001, dependencias dinámicas y código `.pyc`.
 El instalador es por usuario, crea accesos «Telazocraft» y no incluye bibliotecas Minecraft.
