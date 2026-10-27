@@ -1,0 +1,21 @@
+Telazocraft: Copyright (c) 2026 Adrián Rodríguez Rodríguez. Licencia MIT.
+
+El tema, los glifos y los controles genéricos proceden de vision_driver,
+del mismo autor, reutilizados bajo MIT con su autorización.
+
+PySide6 Essentials y shiboken6: The Qt Company Ltd. y colaboradores.
+Se utilizan sin modificar, mediante bibliotecas dinámicas. PySide6 se distribuye
+bajo LGPLv3/GPLv3 o licencia comercial. Las licencias y avisos originales de Qt
+deben acompañar a los instaladores. Documentación y código fuente:
+https://doc.qt.io/qtforpython-6/licenses.html
+https://code.qt.io/pyside/pyside-setup.git/
+
+Python: Python Software Foundation License. Las distribuciones autocontenidas
+de Python y sus licencias deben acompañar al instalador.
+
+truststore: Copyright Seth Michael Larson, David Glick y colaboradores. Licencia MIT.
+Verificación TLS mediante el almacén nativo del sistema, sin modificar truststore.
+https://github.com/sethmlarson/truststore
+
+Minecraft, NeoForge, los mods y Java se descargan de sus distribuidores; sus
+licencias son independientes. Los mundos y servidores no forman parte del código.

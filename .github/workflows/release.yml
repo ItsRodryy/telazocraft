@@ -1,0 +1,48 @@
+name: Instalador y Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar herramientas
+        run: |
+          choco install innosetup -y --no-progress
+          python -m pip install -r requirements.txt
+      - name: Verificar
+        env:
+          PYTHONPATH: code
+          QT_QPA_PLATFORM: offscreen
+        run: python -B -m unittest discover -s tests
+      - name: Fabricar instalador
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if ($env:RELEASE_TAG -match '^v(\d+\.\d+\.\d+)$') {
+            python tools/empaquetar.py --version $Matches[1] --iscc "C:/Program Files (x86)/Inno Setup 6/ISCC.exe"
+          } else {
+            python tools/empaquetar.py --iscc "C:/Program Files (x86)/Inno Setup 6/ISCC.exe"
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: instalador
+          path: dist/*
+      - name: Publicar Release al crear una etiqueta
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/Telazocraft-*-windows.exe
+            dist/SHA256SUMS

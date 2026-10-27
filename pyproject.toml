@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "telazocraft"
+version = "0.2.1"
+description = "Gestor de bibliotecas de servidores de Minecraft"
+authors = [{name = "Adrián Rodríguez Rodríguez"}]
+requires-python = ">=3.11"
+dependencies = ["PySide6_Essentials~=6.11.0", "truststore~=0.10.5"]
+
+[project.scripts]
+telazocraft = "telazocraft.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["code"]
