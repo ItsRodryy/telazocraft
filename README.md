@@ -1,8 +1,9 @@
 # Telazocraft 0.3.1
 
 Gestor de bibliotecas de servidores Minecraft para Windows. Autor: Adrián Rodríguez Rodríguez.
-Licencia MIT. La aplicación y sus datos se guardan por separado: este proyecto nunca contiene
-mundos, servidores, mods, jugadores, copias ni claves.
+Licencia MIT. En el equipo del autor la biblioteca vive en `biblioteca/`, dentro de esta carpeta,
+pero está excluida de Git: el repositorio nunca contiene mundos, servidores, mods, jugadores,
+copias ni claves.
 
 Permite iniciar un solo servidor, enviar comandos, consultar jugadores, sesiones y rendimiento,
 gestionar mods de Modrinth y generar un paquete completo para amigos. Incluye copias por niveles, restauración,

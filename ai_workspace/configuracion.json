@@ -1,0 +1,91 @@
+{
+    "schema_version":  2,
+    "template_version":  "2.3.0",
+    "proyecto":  {
+                     "nombre":  "Telazocraft",
+                     "descripcion":  "App de Windows (Python + PySide6) que gestiona la biblioteca de servidores de Minecraft: Lepazo Vice (NeoForge 1.21.1) y Hardcore 26.3. La biblioteca vive en biblioteca/, dentro de esta carpeta, excluida de Git y sincronizada con el portátil por Syncthing.",
+                     "autoria":  "Adrián Rodríguez Rodríguez (GitHub: ItsRodryy)",
+                     "plataformas":  [
+                                         "Windows (sobremesa y portátil)"
+                                     ],
+                     "tecnologias":  [
+                                         "Python 3.11/3.12",
+                                         "PySide6 6.11",
+                                         "NeoForge 1.21.1/JDK 21 y 26.3/JDK 25",
+                                         "Playit v1.0.10",
+                                         "Syncthing (SyncTrayzor)",
+                                         "Inno Setup"
+                                     ],
+                     "verificacion":  [
+                                          "$env:PYTHONPATH=\u0027code\u0027; $env:QT_QPA_PLATFORM=\u0027offscreen\u0027; .venv/Scripts/python.exe -B -m unittest discover -s tests",
+                                          ".venv/Scripts/python.exe -B -m telazocraft --biblioteca biblioteca --smoke (no arranca servidores)",
+                                          "Pruebas reales solo con permiso, sobre copias y con GESTOR_NO_PLAYIT=1"
+                                      ],
+                     "reglas":  [
+                                    "biblioteca/ (datos de los servidores) no entra nunca en Git; los servidores nuevos se crean en biblioteca/servidores/.",
+                                    "Antes de modificar datos de un servidor: apagado (sin Java del servidor ni compartido/EN_USO.lock). La app se puede trabajar con él activo, sin arrancarlo ni pararlo.",
+                                    "Configs de Minecraft, .py, .ini y .json en UTF-8 sin BOM.",
+                                    "En biblioteca/ lo que sobre se mueve a archivo/, nunca se borra.",
+                                    "No cambiar online-mode, red, Playit ni whitelist sin avisar: rompe el acceso de los amigos. Sin OP ni creativo salvo petición.",
+                                    "No quitar, añadir ni actualizar mods sin orden expresa.",
+                                    "Una etiqueta vX.Y.Z publica una Release en GitHub: no crear etiquetas sin permiso.",
+                                    "Comunica en castellano claro; explica los términos técnicos cuando haga falta.",
+                                    "Distingue lo comprobado de lo supuesto, lo propuesto y lo pendiente.",
+                                    "No digas que algo compila, funciona o está validado sin haberlo comprobado.",
+                                    "Archivos y carpetas nuevos en minúsculas con guion bajo; respeta los nombres obligatorios y los existentes.",
+                                    "Commits y push solo como ItsRodryy (nunca 2DAM-adrianrod493), mensaje «vX.Y.Z - Descripción» y sin firma de IA.",
+                                    "Al acabar cada tarea, añade una fila en ai_workspace/registro_trabajo.md."
+                                ],
+                     "intocables":  [
+                                        "biblioteca/servidores/lepazo/world/ y playerdata/",
+                                        "biblioteca/servidores/lepazo/{mods,config,defaultconfigs,libraries}/",
+                                        "ZIP de biblioteca/copias/ y biblioteca/archivo/hardcore_1.21.1/copias/",
+                                        "biblioteca/compartido/sync_guardia.local.ini (clave secreta: no imprimir ni copiar)",
+                                        "biblioteca/archivo/migrate_players.ps1 (no ejecutar nunca)"
+                                    ],
+                     "interfaz":  false
+                 },
+    "preferencias":  {
+                         "modelo_y_esfuerzo":  "medio_alto",
+                         "idioma":  "español",
+                         "avisos":  "frecuentes",
+                         "git":  "lectura_preguntar"
+                     },
+    "asistentes":  [
+                       "claude",
+                       "codex"
+                   ],
+    "graphify":  true,
+    "limites_kb":  {
+                       "AGENTS.md":  6,
+                       "ai_workspace/progreso.md":  6,
+                       "PLAN_ACTUAL.md":  10,
+                       "ai_workspace/ESTADO.md":  3,
+                       "ai_workspace/archivo/CHANGELOG.md":  6,
+                       "ai_workspace/contexto/":  8
+                   },
+    "contexto":  {
+                     "ai_workspace/contexto/servidor.md":  {
+                                                               "leer_si":  "tocar servidores, modos, copias, Playit o Syncthing"
+                                                           },
+                     "ai_workspace/contexto/telazocraft.md":  {
+                                                                  "leer_si":  "cambiar el código o la arquitectura de la app"
+                                                              },
+                     "ai_workspace/contexto/telazocraft_pantallas.md":  {
+                                                                            "leer_si":  "crear o cambiar interfaz"
+                                                                        },
+                     "ai_workspace/contexto/reorganizacion.md":  {
+                                                                     "leer_si":  "revisar cómo se migró la biblioteca"
+                                                                 }
+                 },
+    "extra":  "Uso diario: biblioteca/LEEME.md.",
+    "exclusiones_backup":  [
+                               "biblioteca",
+                               ".venv",
+                               "build",
+                               "dist",
+                               "archivo",
+                               "__pycache__",
+                               "graphify-out"
+                           ]
+}

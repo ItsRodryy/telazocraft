@@ -3,5 +3,7 @@ __pycache__/
 *.pyc
 dist/
 build/
-archivo/
+/archivo/
 *.log
+/biblioteca/
+/graphify-out/
