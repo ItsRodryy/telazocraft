@@ -18,7 +18,10 @@ Si el usuario solo pausa o cambia de agente, salta los pasos 1 y 6.
    - `EXCEDE`: compacta ese documento dejando solo lo vigente. CHANGELOG: funde lo antiguo en un
      resumen corto. Plan: bloques hechos en una línea. AGENTS.md: mueve el detalle a
      `ai_workspace/contexto/` con su fila en la tabla de documentación.
-   - `REVISAR`: borra los temporales que creaste tú; si no sabes de dónde vienen, pregunta.
+   - `REVISAR`: no toques `contenido_propio` de la configuración; borra solo tus temporales.
+     Lo desconocido es del proyecto: pregunta antes de borrar, mover o compactar.
+   - `PLAN_COMPLETO_SIN_CERRAR`: archiva solo tras verificarlo. `PLAN_SIN_BLOQUES`: pon casillas
+     según el estado real; si no está claro, pregunta.
 6. Plan terminado y verificado:
    `powershell -NoProfile -File ai_workspace/tools/planes.ps1 -Accion Archivar -Estado COMPLETADO`
    (se guardan los tres últimos). Si queda trabajo, marca los bloques, escribe el siguiente paso y no

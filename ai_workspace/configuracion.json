@@ -1,6 +1,6 @@
 {
     "schema_version":  2,
-    "template_version":  "2.3.0",
+    "template_version":  "2.4.0",
     "proyecto":  {
                      "nombre":  "Telazocraft",
                      "descripcion":  "App de Windows (Python + PySide6) que gestiona la biblioteca de servidores de Minecraft: Lepazo Vice (NeoForge 1.21.1) y Hardcore 26.3. La biblioteca vive en biblioteca/, dentro de esta carpeta, excluida de Git y sincronizada con el portátil por Syncthing.",
@@ -78,6 +78,9 @@
                                                                      "leer_si":  "revisar cómo se migró la biblioteca"
                                                                  }
                  },
+    "contenido_propio":  [
+
+                         ],
     "extra":  "Uso diario: biblioteca/LEEME.md.",
     "exclusiones_backup":  [
                                "biblioteca",

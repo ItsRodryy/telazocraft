@@ -117,6 +117,25 @@ function Medir {
     $limites = Obtener-Limites
     $excesos = 0
     $revisar = 0
+    $avisosPlan = 0
+    $contenidoPropio = @()
+    $rutaConfig = Join-Path $Raiz 'ai_workspace\configuracion.json'
+    if (Test-Path -LiteralPath $rutaConfig -PathType Leaf) {
+        $config = [IO.File]::ReadAllText($rutaConfig, [Text.Encoding]::UTF8) | ConvertFrom-Json
+        if ($config.PSObject.Properties['contenido_propio']) { $contenidoPropio = @($config.contenido_propio) }
+    }
+    if (Test-Path -LiteralPath $plan -PathType Leaf) {
+        $textoPlan = Leer-Plan
+        $pendientes = $textoPlan -match '\[ \]'
+        $hechos = $textoPlan -match '\[(HECHO|x)\]'
+        if (-not $pendientes -and $hechos -and $textoPlan -match '(?m)^> \*\*Estado:\*\* EN CURSO\s*$') {
+            Write-Output 'PLAN_COMPLETO_SIN_CERRAR PLAN_ACTUAL.md'
+            $avisosPlan++
+        } elseif (-not $pendientes -and -not $hechos) {
+            Write-Output 'PLAN_SIN_BLOQUES PLAN_ACTUAL.md'
+            $avisosPlan++
+        }
+    }
     foreach ($clave in $limites.Keys) {
         $ruta = Join-Path $Raiz ($clave.TrimEnd('/').Replace('/', '\'))
         $archivos = @()
@@ -143,6 +162,13 @@ function Medir {
     if (Test-Path -LiteralPath $carpetaIA -PathType Container) {
         foreach ($elemento in @(Get-ChildItem -LiteralPath $carpetaIA -File -Recurse)) {
             $relativa = $elemento.FullName.Substring($Raiz.Length + 1).Replace('\', '/')
+            if ($relativa -match '(^|/)__pycache__(/|$)' -or $elemento.Extension -ieq '.pyc' -or $relativa -ieq 'ai_workspace/.gitignore') { continue }
+            $esPropio = $false
+            foreach ($rutaPropia in $contenidoPropio) {
+                $patron = "$rutaPropia".Replace('\', '/').TrimEnd('/')
+                if ($relativa -ilike $patron -or $relativa -ilike "$patron/*") { $esPropio = $true; break }
+            }
+            if ($esPropio) { continue }
             if ($elemento.Extension.ToLowerInvariant() -notin $permitidas -or $elemento.Name -match '(?i)traspaso|respaldo|backup') {
                 Write-Output "REVISAR $relativa"
                 $revisar++
@@ -155,8 +181,8 @@ function Medir {
             $revisar++
         }
     }
-    if ($excesos + $revisar -eq 0) { Write-Output "MEDIDA_OK" }
-    else { Write-Output "MEDIDA_PENDIENTE excede=$excesos revisar=$revisar" }
+    if ($excesos + $revisar + $avisosPlan -eq 0) { Write-Output "MEDIDA_OK" }
+    else { Write-Output "MEDIDA_PENDIENTE excede=$excesos revisar=$revisar avisos_plan=$avisosPlan" }
 }
 
 switch ($Accion) {
